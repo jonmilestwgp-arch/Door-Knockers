@@ -133,6 +133,31 @@
   details.howto ol{ margin:0 0 14px; padding-left:20px; font-size:12.5px; line-height:1.6; color:var(--ink-soft); }
   details.howto code{ background:#EEF0EC; padding:1px 4px; border-radius:2px; font-size:11.5px; }
 
+  #filterDrawer{
+    position:fixed; top:0; left:0; height:100%; width:340px; max-width:90vw;
+    background:var(--paper-raised); border-right:1px solid var(--line);
+    transform:translateX(-100%); transition:transform .2s ease; z-index:11;
+    display:flex; flex-direction:column;
+  }
+  #filterDrawer.open{ transform:translateX(0); }
+  #filterDrawer .drawer-body input[type="search"]{
+    width:100%; font-family:var(--sans); font-size:13.5px; padding:9px 10px;
+    border-radius:3px; border:1px solid var(--line-strong); background:var(--paper); margin-bottom:18px;
+  }
+  .filter-field{ margin-bottom:16px; }
+  .filter-field label{ display:block; font-size:12px; font-weight:600; margin-bottom:5px; color:var(--ink); }
+  .filter-field select{
+    width:100%; font-family:var(--sans); font-size:13.5px; padding:8px 10px; border-radius:3px;
+    border:1px solid var(--line-strong); background:var(--paper); color:var(--ink);
+  }
+
+  /* ---- Mobile column view ---- */
+  @media (max-width: 700px){
+    #dataTable th, #dataTable td{ display:none; }
+    #dataTable th.mobile-show, #dataTable td.mobile-show{ display:table-cell; }
+    #drawer, #filterDrawer{ width:100%; }
+  }
+
   /* ---- Toast ---- */
   #toast{
     position:fixed; bottom:22px; right:24px; padding:10px 16px; border-radius:4px;
@@ -156,19 +181,12 @@
   <div class="actions">
     <span id="whoami" style="font-size:12.5px;color:var(--ink-soft);"></span>
     <button id="signInBtn" class="primary">Sign in with Google</button>
+    <button id="filtersBtn" class="ghost" title="Filters">☰ Filters</button>
     <button id="settingsBtn" class="ghost" title="Settings">⚙ Settings</button>
   </div>
 </header>
 
 <div id="statusStrip"></div>
-
-<div class="toolbar" id="toolbar" style="display:none;">
-  <input type="search" id="searchBox" placeholder="Search all columns…">
-  <div id="filterControls" style="display:flex; gap:10px; flex-wrap:wrap;"></div>
-  <div class="spacer"></div>
-  <button id="refreshBtn" class="ghost">↻ Refresh</button>
-  <span class="row-count" id="rowCount"></span>
-</div>
 
 <div class="table-wrap">
   <div class="empty-state" id="emptyState">
@@ -179,6 +197,22 @@
     <thead><tr id="headerRow"></tr></thead>
     <tbody id="bodyRows"></tbody>
   </table>
+</div>
+
+<!-- Filters drawer -->
+<div id="filterDrawer">
+  <div class="drawer-head">
+    <h2>Filters</h2>
+    <button class="ghost" id="closeFilterDrawerBtn">✕</button>
+  </div>
+  <div class="drawer-body">
+    <input type="search" id="searchBox" placeholder="Search all columns…">
+    <div id="filterControls"></div>
+  </div>
+  <div class="drawer-foot" style="justify-content:space-between; align-items:center;">
+    <button id="refreshBtn" class="ghost">↻ Refresh</button>
+    <span class="row-count" id="rowCount"></span>
+  </div>
 </div>
 
 <!-- Settings drawer -->
@@ -234,6 +268,11 @@
       <label for="cfgCheckboxCols">Checkbox columns</label>
       <input type="text" id="cfgCheckboxCols" value="August Newsletter" placeholder="August Newsletter">
       <div class="hint">Comma-separated header names to render as a tick box instead of text. Ticking writes TRUE, unticking writes FALSE back to the sheet.</div>
+    </div>
+    <div class="field">
+      <label for="cfgMobileCols">Mobile columns</label>
+      <input type="text" id="cfgMobileCols" value="Number, 60 Sec, August Newsletter" placeholder="Number, Status">
+      <div class="hint">Comma-separated header names to show on a small/mobile screen. All columns still show on larger screens.</div>
     </div>
   </div>
   <div class="drawer-foot">
@@ -310,7 +349,8 @@
       filterCols: csvSplit(p.get("filterCols")),
       editCol: p.get("editCol") || "",
       editOptions: csvSplit(p.get("editOptions")),
-      checkboxCols: csvSplit(p.get("checkboxCols"))
+      checkboxCols: csvSplit(p.get("checkboxCols")),
+      mobileCols: csvSplit(p.get("mobileCols"))
     };
   }
 
@@ -323,12 +363,33 @@
     if(cfg.editCol) p.set("editCol", cfg.editCol);
     if(cfg.editOptions.length) p.set("editOptions", cfg.editOptions.join(","));
     if(cfg.checkboxCols.length) p.set("checkboxCols", cfg.checkboxCols.join(","));
+    if(cfg.mobileCols.length) p.set("mobileCols", cfg.mobileCols.join(","));
     var newUrl = window.location.pathname + "?" + p.toString();
     history.replaceState(null, "", newUrl);
   }
 
   // ---------- settings drawer ----------
+  function buildConfigFromFields(){
+    return {
+      clientId: $("cfgClientId").value.trim(),
+      sheetId: $("cfgSheetId").value.trim(),
+      tab: $("cfgTab").value.trim() || "Sheet1",
+      filterCols: csvSplit($("cfgFilterCols").value),
+      editCol: $("cfgEditCol").value.trim(),
+      editOptions: csvSplit($("cfgEditOptions").value),
+      checkboxCols: csvSplit($("cfgCheckboxCols").value),
+      mobileCols: csvSplit($("cfgMobileCols").value)
+    };
+  }
+
+  function closeAllPanels(){
+    $("overlay").className = "";
+    $("drawer").className = "";
+    $("filterDrawer").className = "";
+  }
+
   function openDrawer(){
+    closeAllPanels();
     if(state.config){
       $("cfgClientId").value = state.config.clientId || "";
       $("cfgSheetId").value = state.config.sheetId || "";
@@ -337,37 +398,32 @@
       $("cfgEditCol").value = state.config.editCol || "";
       $("cfgEditOptions").value = (state.config.editOptions || []).join(", ");
       $("cfgCheckboxCols").value = (state.config.checkboxCols || []).join(", ");
+      $("cfgMobileCols").value = (state.config.mobileCols || []).join(", ");
     }
     $("overlay").className = "open";
     $("drawer").className = "open";
   }
-  function closeDrawer(){
-    $("overlay").className = "";
-    $("drawer").className = "";
+  function closeDrawer(){ closeAllPanels(); }
+
+  function openFilterDrawer(){
+    closeAllPanels();
+    $("overlay").className = "open";
+    $("filterDrawer").className = "open";
   }
 
   $("settingsBtn").addEventListener("click", openDrawer);
   $("closeDrawerBtn").addEventListener("click", closeDrawer);
   $("cancelSettingsBtn").addEventListener("click", closeDrawer);
-  $("overlay").addEventListener("click", closeDrawer);
+  $("overlay").addEventListener("click", closeAllPanels);
+  $("filtersBtn").addEventListener("click", openFilterDrawer);
+  $("closeFilterDrawerBtn").addEventListener("click", closeAllPanels);
 
   $("saveSettingsBtn").addEventListener("click", function(){
-    var clientId = $("cfgClientId").value.trim();
-    var sheetId = $("cfgSheetId").value.trim();
-    var tab = $("cfgTab").value.trim() || "Sheet1";
-    if(!clientId || !sheetId){
+    var cfg = buildConfigFromFields();
+    if(!cfg.clientId || !cfg.sheetId){
       toast("Client ID and Spreadsheet ID are required.", "error");
       return;
     }
-    var cfg = {
-      clientId: clientId,
-      sheetId: sheetId,
-      tab: tab,
-      filterCols: csvSplit($("cfgFilterCols").value),
-      editCol: $("cfgEditCol").value.trim(),
-      editOptions: csvSplit($("cfgEditOptions").value),
-      checkboxCols: csvSplit($("cfgCheckboxCols").value)
-    };
     state.config = cfg;
     saveConfigToURL(cfg);
     closeDrawer();
@@ -489,6 +545,12 @@
     return v === "true" || v === "yes" || v === "1" || v === "x" || v === "✓";
   }
 
+  function isMobileCol(header){
+    if(!state.config || !state.config.mobileCols || !state.config.mobileCols.length) return false;
+    var h = (header || "").trim().toLowerCase();
+    return state.config.mobileCols.some(function(m){ return m.trim().toLowerCase() === h; });
+  }
+
   function updateCell(rowObj, colIndex, newValue, fieldEl){
     var a1 = state.config.tab + "!" + colToLetter(colIndex) + rowObj.sheetRowNumber;
     fieldEl.classList.remove("saved", "save-error");
@@ -551,10 +613,11 @@
       state.rows.forEach(function(r){ uniqSet[r.values[idx] || "(blank)"] = true; });
       var values = Object.keys(uniqSet).sort();
 
-      var label = document.createElement("span");
-      label.className = "filter-label";
+      var wrap = document.createElement("div");
+      wrap.className = "filter-field";
+      var label = document.createElement("label");
       label.textContent = state.headers[idx];
-      container.appendChild(label);
+      wrap.appendChild(label);
 
       var sel = document.createElement("select");
       var optAll = document.createElement("option");
@@ -570,9 +633,9 @@
         else state.filters[idx] = sel.value;
         renderTable();
       });
-      container.appendChild(sel);
+      wrap.appendChild(sel);
+      container.appendChild(wrap);
     });
-    $("toolbar").style.display = "flex";
   }
 
   $("searchBox").addEventListener("input", function(){
@@ -603,6 +666,7 @@
     state.headers.forEach(function(h){
       var th = document.createElement("th");
       th.textContent = h;
+      if(isMobileCol(h)) th.classList.add("mobile-show");
       headerRow.appendChild(th);
     });
 
@@ -614,6 +678,7 @@
       var tr = document.createElement("tr");
       state.headers.forEach(function(h, colIndex){
         var td = document.createElement("td");
+        if(isMobileCol(h)) td.classList.add("mobile-show");
         var editCfg = state.editColumns[colIndex];
         if(editCfg && editCfg.type === "dropdown"){
           td.classList.add("editable-cell");
@@ -658,8 +723,13 @@
   // ---------- boot ----------
   function boot(){
     var cfg = loadConfigFromURL();
+    if(!cfg){
+      var fromFields = buildConfigFromFields();
+      if(fromFields.clientId && fromFields.sheetId) cfg = fromFields;
+    }
     if(cfg){
       state.config = cfg;
+      saveConfigToURL(cfg);
       window.addEventListener("load", function(){
         // give the GIS script a moment to attach to window.google
         var tries = 0;
