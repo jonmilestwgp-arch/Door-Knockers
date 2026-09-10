@@ -151,12 +151,21 @@
     border:1px solid var(--line-strong); background:var(--paper); color:var(--ink);
   }
 
-  /* ---- Mobile column view ---- */
+  /* ---- Column visibility toggle ---- */
   @media (max-width: 700px){
-    #dataTable th, #dataTable td{ display:none; }
-    #dataTable th.mobile-show, #dataTable td.mobile-show{ display:table-cell; }
     #drawer, #filterDrawer{ width:100%; }
   }
+  th .th-inner{ display:flex; align-items:center; justify-content:space-between; gap:8px; }
+  th .col-label{ overflow:hidden; text-overflow:ellipsis; }
+  th .col-toggle{
+    flex:none; cursor:pointer; opacity:0.45; background:none; border:none; color:var(--ink);
+    font-size:13px; line-height:1; padding:2px 4px; border-radius:3px;
+  }
+  th .col-toggle:hover{ opacity:1; background:var(--paper); }
+  th.col-collapsed{ width:1%; min-width:34px; }
+  th.col-collapsed .col-label{ display:none; }
+  th.col-collapsed .col-toggle{ opacity:1; }
+  td.col-hidden-cell{ display:none; }
 
   /* ---- Toast ---- */
   #toast{
@@ -269,11 +278,6 @@
       <input type="text" id="cfgCheckboxCols" value="August Newsletter" placeholder="August Newsletter">
       <div class="hint">Comma-separated header names to render as a tick box instead of text. Ticking writes TRUE, unticking writes FALSE back to the sheet.</div>
     </div>
-    <div class="field">
-      <label for="cfgMobileCols">Mobile columns</label>
-      <input type="text" id="cfgMobileCols" value="Number, 60 Sec, August Newsletter" placeholder="Number, Status">
-      <div class="hint">Comma-separated header names to show on a small/mobile screen. All columns still show on larger screens.</div>
-    </div>
   </div>
   <div class="drawer-foot">
     <button class="ghost" id="cancelSettingsBtn">Cancel</button>
@@ -297,7 +301,8 @@
     rows: [],        // array of {values:[...], sheetRowNumber: n}
     filters: {},      // colIndex -> selected value
     search: "",
-    editColumns: {} // colIndex -> { type: 'dropdown'|'checkbox', options: [...] }
+    editColumns: {}, // colIndex -> { type: 'dropdown'|'checkbox', options: [...] }
+    hiddenCols: {}   // colIndex -> true when toggled off by the user
   };
 
   // ---------- helpers ----------
@@ -349,8 +354,7 @@
       filterCols: csvSplit(p.get("filterCols")),
       editCol: p.get("editCol") || "",
       editOptions: csvSplit(p.get("editOptions")),
-      checkboxCols: csvSplit(p.get("checkboxCols")),
-      mobileCols: csvSplit(p.get("mobileCols"))
+      checkboxCols: csvSplit(p.get("checkboxCols"))
     };
   }
 
@@ -363,7 +367,6 @@
     if(cfg.editCol) p.set("editCol", cfg.editCol);
     if(cfg.editOptions.length) p.set("editOptions", cfg.editOptions.join(","));
     if(cfg.checkboxCols.length) p.set("checkboxCols", cfg.checkboxCols.join(","));
-    if(cfg.mobileCols.length) p.set("mobileCols", cfg.mobileCols.join(","));
     var newUrl = window.location.pathname + "?" + p.toString();
     history.replaceState(null, "", newUrl);
   }
@@ -377,8 +380,7 @@
       filterCols: csvSplit($("cfgFilterCols").value),
       editCol: $("cfgEditCol").value.trim(),
       editOptions: csvSplit($("cfgEditOptions").value),
-      checkboxCols: csvSplit($("cfgCheckboxCols").value),
-      mobileCols: csvSplit($("cfgMobileCols").value)
+      checkboxCols: csvSplit($("cfgCheckboxCols").value)
     };
   }
 
@@ -398,7 +400,6 @@
       $("cfgEditCol").value = state.config.editCol || "";
       $("cfgEditOptions").value = (state.config.editOptions || []).join(", ");
       $("cfgCheckboxCols").value = (state.config.checkboxCols || []).join(", ");
-      $("cfgMobileCols").value = (state.config.mobileCols || []).join(", ");
     }
     $("overlay").className = "open";
     $("drawer").className = "open";
@@ -545,10 +546,10 @@
     return v === "true" || v === "yes" || v === "1" || v === "x" || v === "✓";
   }
 
-  function isMobileCol(header){
-    if(!state.config || !state.config.mobileCols || !state.config.mobileCols.length) return false;
-    var h = (header || "").trim().toLowerCase();
-    return state.config.mobileCols.some(function(m){ return m.trim().toLowerCase() === h; });
+  function toggleColumn(colIndex){
+    if(state.hiddenCols[colIndex]) delete state.hiddenCols[colIndex];
+    else state.hiddenCols[colIndex] = true;
+    renderTable();
   }
 
   function updateCell(rowObj, colIndex, newValue, fieldEl){
@@ -663,10 +664,31 @@
   function renderTable(){
     var headerRow = $("headerRow");
     headerRow.innerHTML = "";
-    state.headers.forEach(function(h){
+    state.headers.forEach(function(h, colIndex){
       var th = document.createElement("th");
-      th.textContent = h;
-      if(isMobileCol(h)) th.classList.add("mobile-show");
+      var hidden = !!state.hiddenCols[colIndex];
+      if(hidden) th.classList.add("col-collapsed");
+
+      var inner = document.createElement("div");
+      inner.className = "th-inner";
+
+      var label = document.createElement("span");
+      label.className = "col-label";
+      label.textContent = h;
+      inner.appendChild(label);
+
+      var toggle = document.createElement("button");
+      toggle.className = "col-toggle";
+      toggle.type = "button";
+      toggle.textContent = hidden ? "◦" : "●";
+      toggle.title = hidden ? "Show " + h : "Hide " + h;
+      toggle.addEventListener("click", function(e){
+        e.stopPropagation();
+        toggleColumn(colIndex);
+      });
+      inner.appendChild(toggle);
+
+      th.appendChild(inner);
       headerRow.appendChild(th);
     });
 
@@ -678,7 +700,7 @@
       var tr = document.createElement("tr");
       state.headers.forEach(function(h, colIndex){
         var td = document.createElement("td");
-        if(isMobileCol(h)) td.classList.add("mobile-show");
+        if(state.hiddenCols[colIndex]) td.classList.add("col-hidden-cell");
         var editCfg = state.editColumns[colIndex];
         if(editCfg && editCfg.type === "dropdown"){
           td.classList.add("editable-cell");
