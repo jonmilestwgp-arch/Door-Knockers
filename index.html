@@ -151,21 +151,21 @@
     border:1px solid var(--line-strong); background:var(--paper); color:var(--ink);
   }
 
-  /* ---- Column visibility toggle ---- */
+  /* ---- Column visibility ---- */
   @media (max-width: 700px){
     #drawer, #filterDrawer{ width:100%; }
   }
-  th .th-inner{ display:flex; align-items:center; justify-content:space-between; gap:8px; }
-  th .col-label{ overflow:hidden; text-overflow:ellipsis; }
-  th .col-toggle{
-    flex:none; cursor:pointer; opacity:0.45; background:none; border:none; color:var(--ink);
-    font-size:13px; line-height:1; padding:2px 4px; border-radius:3px;
+  th.col-hidden-cell, td.col-hidden-cell{ display:none; }
+
+  .drawer-section-label{
+    font-size:12.5px; font-weight:600; color:var(--ink); margin:20px 0 8px;
+    border-top:1px solid var(--line); padding-top:16px;
   }
-  th .col-toggle:hover{ opacity:1; background:var(--paper); }
-  th.col-collapsed{ width:1%; min-width:34px; }
-  th.col-collapsed .col-label{ display:none; }
-  th.col-collapsed .col-toggle{ opacity:1; }
-  td.col-hidden-cell{ display:none; }
+  .column-toggle-row{
+    display:flex; align-items:center; gap:9px; padding:6px 2px; font-size:13.5px;
+  }
+  .column-toggle-row input[type="checkbox"]{ accent-color:var(--teal); cursor:pointer; }
+  .column-toggle-row label{ cursor:pointer; overflow:hidden; text-overflow:ellipsis; }
 
   /* ---- Toast ---- */
   #toast{
@@ -217,6 +217,8 @@
   <div class="drawer-body">
     <input type="search" id="searchBox" placeholder="Search all columns…">
     <div id="filterControls"></div>
+    <div class="drawer-section-label">Columns</div>
+    <div id="columnControls"></div>
   </div>
   <div class="drawer-foot" style="justify-content:space-between; align-items:center;">
     <button id="refreshBtn" class="ghost">↻ Refresh</button>
@@ -506,6 +508,7 @@
       determineEditColumns();
       clearStatus();
       renderFilterControls();
+      renderColumnControls();
       renderTable();
     })
     .catch(function(err){
@@ -546,10 +549,35 @@
     return v === "true" || v === "yes" || v === "1" || v === "x" || v === "✓";
   }
 
-  function toggleColumn(colIndex){
-    if(state.hiddenCols[colIndex]) delete state.hiddenCols[colIndex];
+  function setColumnVisible(colIndex, visible){
+    if(visible) delete state.hiddenCols[colIndex];
     else state.hiddenCols[colIndex] = true;
     renderTable();
+  }
+
+  function renderColumnControls(){
+    var container = $("columnControls");
+    container.innerHTML = "";
+    state.headers.forEach(function(h, colIndex){
+      var row = document.createElement("div");
+      row.className = "column-toggle-row";
+
+      var cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.id = "colToggle" + colIndex;
+      cb.checked = !state.hiddenCols[colIndex];
+      cb.addEventListener("change", function(){
+        setColumnVisible(colIndex, cb.checked);
+      });
+
+      var label = document.createElement("label");
+      label.setAttribute("for", cb.id);
+      label.textContent = h;
+
+      row.appendChild(cb);
+      row.appendChild(label);
+      container.appendChild(row);
+    });
   }
 
   function updateCell(rowObj, colIndex, newValue, fieldEl){
@@ -666,29 +694,8 @@
     headerRow.innerHTML = "";
     state.headers.forEach(function(h, colIndex){
       var th = document.createElement("th");
-      var hidden = !!state.hiddenCols[colIndex];
-      if(hidden) th.classList.add("col-collapsed");
-
-      var inner = document.createElement("div");
-      inner.className = "th-inner";
-
-      var label = document.createElement("span");
-      label.className = "col-label";
-      label.textContent = h;
-      inner.appendChild(label);
-
-      var toggle = document.createElement("button");
-      toggle.className = "col-toggle";
-      toggle.type = "button";
-      toggle.textContent = hidden ? "◦" : "●";
-      toggle.title = hidden ? "Show " + h : "Hide " + h;
-      toggle.addEventListener("click", function(e){
-        e.stopPropagation();
-        toggleColumn(colIndex);
-      });
-      inner.appendChild(toggle);
-
-      th.appendChild(inner);
+      th.textContent = h;
+      if(state.hiddenCols[colIndex]) th.classList.add("col-hidden-cell");
       headerRow.appendChild(th);
     });
 
