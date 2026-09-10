@@ -1,0 +1,645 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sheet Ledger</title>
+<style>
+  :root{
+    --paper: #F6F7F5;
+    --paper-raised: #FFFFFF;
+    --ink: #20262B;
+    --ink-soft: #5B6570;
+    --line: #DCE0DD;
+    --line-strong: #B9C0BB;
+    --teal: #3C6E71;
+    --teal-deep: #2A4F52;
+    --amber: #C87F0A;
+    --red: #B3402E;
+    --green: #3E7B4F;
+    --mono: ui-monospace, "SF Mono", "Cascadia Mono", "Consolas", monospace;
+    --sans: -apple-system, "Segoe UI", system-ui, sans-serif;
+  }
+  *{ box-sizing: border-box; }
+  html,body{ margin:0; padding:0; background:var(--paper); color:var(--ink); font-family:var(--sans); }
+  body{ min-height:100vh; display:flex; flex-direction:column; }
+
+  /* ---- Top bar ---- */
+  header.topbar{
+    display:flex; align-items:center; justify-content:space-between;
+    padding: 18px 28px; border-bottom:1px solid var(--line);
+    background:var(--paper-raised);
+  }
+  .brand{ display:flex; align-items:baseline; gap:10px; }
+  .brand .mark{ font-family:var(--mono); font-size:13px; color:var(--teal); letter-spacing:0.02em; }
+  .brand h1{ font-size:19px; margin:0; font-weight:600; }
+  .actions{ display:flex; gap:10px; align-items:center; }
+
+  button{
+    font-family:var(--sans); font-size:13.5px; font-weight:500; cursor:pointer;
+    border-radius:3px; border:1px solid var(--line-strong); background:var(--paper-raised);
+    color:var(--ink); padding:8px 14px; transition: background .15s, border-color .15s, color .15s;
+  }
+  button:hover{ border-color: var(--teal); color: var(--teal-deep); }
+  button:focus-visible{ outline:2px solid var(--teal); outline-offset:1px; }
+  button.primary{ background:var(--teal); color:#fff; border-color:var(--teal); }
+  button.primary:hover{ background:var(--teal-deep); border-color:var(--teal-deep); color:#fff; }
+  button.ghost{ border-color:transparent; background:transparent; }
+  button.ghost:hover{ background:var(--paper); }
+  button:disabled{ opacity:0.5; cursor:default; }
+
+  /* ---- Status strip ---- */
+  #statusStrip{ padding: 10px 28px; font-size:13px; border-bottom:1px solid var(--line); display:none; }
+  #statusStrip.show{ display:block; }
+  #statusStrip.error{ background:#FBEEEC; color:var(--red); }
+  #statusStrip.info{ background:#EEF3F1; color:var(--teal-deep); }
+
+  /* ---- Toolbar ---- */
+  .toolbar{
+    display:flex; flex-wrap:wrap; gap:10px; align-items:center;
+    padding: 14px 28px; border-bottom:1px solid var(--line); background:var(--paper-raised);
+  }
+  .toolbar input[type="search"]{
+    font-family:var(--sans); font-size:13.5px; padding:8px 12px; border-radius:3px;
+    border:1px solid var(--line-strong); min-width:220px; background:var(--paper);
+  }
+  .toolbar select{
+    font-family:var(--sans); font-size:13.5px; padding:8px 10px; border-radius:3px;
+    border:1px solid var(--line-strong); background:var(--paper); color:var(--ink);
+  }
+  .toolbar .filter-label{ font-size:11.5px; color:var(--ink-soft); margin-right:-4px; }
+  .toolbar .spacer{ flex:1; }
+  .row-count{ font-family:var(--mono); font-size:12px; color:var(--ink-soft); }
+
+  /* ---- Table ---- */
+  .table-wrap{ flex:1; overflow:auto; }
+  table{ border-collapse:collapse; width:100%; font-size:13.5px; }
+  thead th{
+    position:sticky; top:0; background:var(--paper-raised); text-align:left;
+    padding:10px 14px; border-bottom:2px solid var(--line-strong); font-weight:600;
+    white-space:nowrap; z-index:2;
+  }
+  tbody td{ padding:9px 14px; border-bottom:1px solid var(--line); font-family:var(--mono); white-space:nowrap; }
+  tbody tr:hover td{ background:#EFF3F1; }
+  tbody td.editable-cell{ font-family:var(--sans); }
+
+  select.row-editor{
+    font-family:var(--sans); font-size:13px; padding:5px 8px; border-radius:3px;
+    border:1px solid var(--line-strong); background:var(--paper-raised); color:var(--ink);
+  }
+  select.row-editor.saving{ border-color:var(--amber); color:var(--amber); }
+  select.row-editor.saved{ border-color:var(--green); }
+  select.row-editor.save-error{ border-color:var(--red); color:var(--red); }
+
+  .empty-state{ padding:60px 28px; text-align:center; color:var(--ink-soft); }
+  .empty-state h2{ font-size:16px; color:var(--ink); margin-bottom:8px; }
+  .empty-state p{ font-size:13.5px; max-width:480px; margin:0 auto; line-height:1.5; }
+
+  /* ---- Settings drawer ---- */
+  #overlay{
+    position:fixed; inset:0; background:rgba(20,26,28,0.35); opacity:0; pointer-events:none;
+    transition:opacity .18s; z-index:10;
+  }
+  #overlay.open{ opacity:1; pointer-events:auto; }
+
+  #drawer{
+    position:fixed; top:0; right:0; height:100%; width:420px; max-width:92vw;
+    background:var(--paper-raised); border-left:1px solid var(--line);
+    transform:translateX(100%); transition:transform .2s ease; z-index:11;
+    display:flex; flex-direction:column;
+  }
+  #drawer.open{ transform:translateX(0); }
+  .drawer-head{ padding:20px 24px; border-bottom:1px solid var(--line); display:flex; justify-content:space-between; align-items:center; }
+  .drawer-head h2{ font-size:16px; margin:0; }
+  .drawer-body{ padding:20px 24px; overflow-y:auto; flex:1; }
+  .drawer-foot{ padding:16px 24px; border-top:1px solid var(--line); display:flex; gap:10px; justify-content:flex-end; }
+
+  .field{ margin-bottom:16px; }
+  .field label{ display:block; font-size:12.5px; font-weight:600; margin-bottom:5px; color:var(--ink); }
+  .field .hint{ font-size:11.5px; color:var(--ink-soft); margin-top:4px; line-height:1.4; }
+  .field input[type="text"]{
+    width:100%; font-family:var(--mono); font-size:13px; padding:9px 10px;
+    border-radius:3px; border:1px solid var(--line-strong); background:var(--paper);
+  }
+  .field input[type="text"]:focus{ outline:none; border-color:var(--teal); }
+
+  details.howto{ margin:18px 0; border:1px solid var(--line); border-radius:4px; padding:2px 14px; background:var(--paper); }
+  details.howto summary{ cursor:pointer; padding:10px 0; font-size:13px; font-weight:600; color:var(--teal-deep); }
+  details.howto ol{ margin:0 0 14px; padding-left:20px; font-size:12.5px; line-height:1.6; color:var(--ink-soft); }
+  details.howto code{ background:#EEF0EC; padding:1px 4px; border-radius:2px; font-size:11.5px; }
+
+  /* ---- Toast ---- */
+  #toast{
+    position:fixed; bottom:22px; right:24px; padding:10px 16px; border-radius:4px;
+    font-size:13px; background:var(--ink); color:#fff; opacity:0; transform:translateY(6px);
+    transition:opacity .18s, transform .18s; z-index:20;
+  }
+  #toast.show{ opacity:1; transform:translateY(0); }
+  #toast.error{ background:var(--red); }
+  #toast.success{ background:var(--green); }
+
+  ::selection{ background:#CFE0DC; }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="mark">SHEET://</span>
+    <h1 id="titleText">Sheet Ledger</h1>
+  </div>
+  <div class="actions">
+    <span id="whoami" style="font-size:12.5px;color:var(--ink-soft);"></span>
+    <button id="signInBtn" class="primary">Sign in with Google</button>
+    <button id="settingsBtn" class="ghost" title="Settings">⚙ Settings</button>
+  </div>
+</header>
+
+<div id="statusStrip"></div>
+
+<div class="toolbar" id="toolbar" style="display:none;">
+  <input type="search" id="searchBox" placeholder="Search all columns…">
+  <div id="filterControls" style="display:flex; gap:10px; flex-wrap:wrap;"></div>
+  <div class="spacer"></div>
+  <button id="refreshBtn" class="ghost">↻ Refresh</button>
+  <span class="row-count" id="rowCount"></span>
+</div>
+
+<div class="table-wrap">
+  <div class="empty-state" id="emptyState">
+    <h2>Nothing loaded yet</h2>
+    <p>Open Settings, add your Google OAuth client ID and the sheet you want to work with, then sign in. Data will appear here as a filterable, editable ledger.</p>
+  </div>
+  <table id="dataTable" style="display:none;">
+    <thead><tr id="headerRow"></tr></thead>
+    <tbody id="bodyRows"></tbody>
+  </table>
+</div>
+
+<!-- Settings drawer -->
+<div id="overlay"></div>
+<div id="drawer">
+  <div class="drawer-head">
+    <h2>Settings</h2>
+    <button class="ghost" id="closeDrawerBtn">✕</button>
+  </div>
+  <div class="drawer-body">
+
+    <details class="howto">
+      <summary>How do I get a Client ID and Spreadsheet ID?</summary>
+      <ol>
+        <li>In <a href="https://console.cloud.google.com/" target="_blank" rel="noopener">Google Cloud Console</a>, create (or pick) a project, then enable the <strong>Google Sheets API</strong> under "APIs &amp; Services".</li>
+        <li>Under "APIs &amp; Services → Credentials", create an <strong>OAuth client ID</strong> of type <strong>Web application</strong>.</li>
+        <li>Add this page's exact URL (the address bar right now, without anything after it) under <strong>Authorized JavaScript origins</strong>. This page must be served from a real <code>http://</code> or <code>https://</code> address — opening the file directly (<code>file://</code>) will not work.</li>
+        <li>Copy the generated <strong>Client ID</strong> (ends in <code>.apps.googleusercontent.com</code>) into the field below.</li>
+        <li>Open your Google Sheet, copy the long ID from its URL — the part between <code>/d/</code> and <code>/edit</code> — into the Spreadsheet ID field.</li>
+        <li>Make sure the Google account you sign in with has at least edit access to that sheet.</li>
+      </ol>
+    </details>
+
+    <div class="field">
+      <label for="cfgClientId">OAuth Client ID</label>
+      <input type="text" id="cfgClientId" placeholder="1234567890-abc.apps.googleusercontent.com">
+    </div>
+    <div class="field">
+      <label for="cfgSheetId">Spreadsheet ID</label>
+      <input type="text" id="cfgSheetId" placeholder="1AbCDeFGhijKLmNoPQRstuVWxyz">
+    </div>
+    <div class="field">
+      <label for="cfgTab">Sheet / tab name</label>
+      <input type="text" id="cfgTab" placeholder="Sheet1">
+      <div class="hint">Exactly as it appears on the tab at the bottom of the spreadsheet.</div>
+    </div>
+    <div class="field">
+      <label for="cfgFilterCols">Filter columns <span style="font-weight:400;color:var(--ink-soft);">(optional)</span></label>
+      <input type="text" id="cfgFilterCols" placeholder="Status, Region, Owner">
+      <div class="hint">Comma-separated header names to show as dropdown filters. Leave blank to auto-detect columns with a small number of repeated values.</div>
+    </div>
+    <div class="field">
+      <label for="cfgEditCol">Editable column</label>
+      <input type="text" id="cfgEditCol" placeholder="Status">
+      <div class="hint">The header name of the field people should update from a dropdown. Leave blank to disable editing.</div>
+    </div>
+    <div class="field">
+      <label for="cfgEditOptions">Editable column options</label>
+      <input type="text" id="cfgEditOptions" placeholder="Not started, In progress, Done">
+      <div class="hint">Comma-separated allowed values for the dropdown above.</div>
+    </div>
+  </div>
+  <div class="drawer-foot">
+    <button class="ghost" id="cancelSettingsBtn">Cancel</button>
+    <button class="primary" id="saveSettingsBtn">Save &amp; connect</button>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<script>
+(function(){
+  "use strict";
+
+  var SCOPE = "https://www.googleapis.com/auth/spreadsheets";
+  var state = {
+    config: null,
+    tokenClient: null,
+    accessToken: null,
+    headers: [],
+    rows: [],        // array of {values:[...], sheetRowNumber: n}
+    filters: {},      // colIndex -> selected value
+    search: "",
+    editColIndex: -1,
+    editOptions: []
+  };
+
+  // ---------- helpers ----------
+  function $(id){ return document.getElementById(id); }
+
+  function colToLetter(n){ // 0-based index -> A, B, ... AA
+    var s = "";
+    n = n + 1;
+    while(n > 0){
+      var rem = (n - 1) % 26;
+      s = String.fromCharCode(65 + rem) + s;
+      n = Math.floor((n - 1) / 26);
+    }
+    return s;
+  }
+
+  function showStatus(msg, type){
+    var el = $("statusStrip");
+    el.textContent = msg;
+    el.className = "show " + (type || "info");
+  }
+  function clearStatus(){
+    var el = $("statusStrip");
+    el.className = "";
+    el.textContent = "";
+  }
+
+  var toastTimer = null;
+  function toast(msg, type){
+    var el = $("toast");
+    el.textContent = msg;
+    el.className = "show " + (type || "");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function(){ el.className = ""; }, 2600);
+  }
+
+  function csvSplit(str){
+    return (str || "").split(",").map(function(s){ return s.trim(); }).filter(Boolean);
+  }
+
+  // ---------- config persistence via URL ----------
+  function loadConfigFromURL(){
+    var p = new URLSearchParams(window.location.search);
+    if(!p.has("clientId") || !p.has("sheetId")) return null;
+    return {
+      clientId: p.get("clientId") || "",
+      sheetId: p.get("sheetId") || "",
+      tab: p.get("tab") || "Sheet1",
+      filterCols: csvSplit(p.get("filterCols")),
+      editCol: p.get("editCol") || "",
+      editOptions: csvSplit(p.get("editOptions"))
+    };
+  }
+
+  function saveConfigToURL(cfg){
+    var p = new URLSearchParams();
+    p.set("clientId", cfg.clientId);
+    p.set("sheetId", cfg.sheetId);
+    p.set("tab", cfg.tab);
+    if(cfg.filterCols.length) p.set("filterCols", cfg.filterCols.join(","));
+    if(cfg.editCol) p.set("editCol", cfg.editCol);
+    if(cfg.editOptions.length) p.set("editOptions", cfg.editOptions.join(","));
+    var newUrl = window.location.pathname + "?" + p.toString();
+    history.replaceState(null, "", newUrl);
+  }
+
+  // ---------- settings drawer ----------
+  function openDrawer(){
+    if(state.config){
+      $("cfgClientId").value = state.config.clientId || "";
+      $("cfgSheetId").value = state.config.sheetId || "";
+      $("cfgTab").value = state.config.tab || "";
+      $("cfgFilterCols").value = (state.config.filterCols || []).join(", ");
+      $("cfgEditCol").value = state.config.editCol || "";
+      $("cfgEditOptions").value = (state.config.editOptions || []).join(", ");
+    }
+    $("overlay").className = "open";
+    $("drawer").className = "open";
+  }
+  function closeDrawer(){
+    $("overlay").className = "";
+    $("drawer").className = "";
+  }
+
+  $("settingsBtn").addEventListener("click", openDrawer);
+  $("closeDrawerBtn").addEventListener("click", closeDrawer);
+  $("cancelSettingsBtn").addEventListener("click", closeDrawer);
+  $("overlay").addEventListener("click", closeDrawer);
+
+  $("saveSettingsBtn").addEventListener("click", function(){
+    var clientId = $("cfgClientId").value.trim();
+    var sheetId = $("cfgSheetId").value.trim();
+    var tab = $("cfgTab").value.trim() || "Sheet1";
+    if(!clientId || !sheetId){
+      toast("Client ID and Spreadsheet ID are required.", "error");
+      return;
+    }
+    var cfg = {
+      clientId: clientId,
+      sheetId: sheetId,
+      tab: tab,
+      filterCols: csvSplit($("cfgFilterCols").value),
+      editCol: $("cfgEditCol").value.trim(),
+      editOptions: csvSplit($("cfgEditOptions").value)
+    };
+    state.config = cfg;
+    saveConfigToURL(cfg);
+    closeDrawer();
+    setUpGoogleAuth();
+    toast("Settings saved.", "success");
+  });
+
+  // ---------- Google auth ----------
+  function setUpGoogleAuth(){
+    if(!window.google || !google.accounts || !google.accounts.oauth2){
+      showStatus("Google sign-in script hasn't loaded yet. Check your connection and reload.", "error");
+      return;
+    }
+    if(!state.config || !state.config.clientId) return;
+    state.tokenClient = google.accounts.oauth2.initTokenClient({
+      client_id: state.config.clientId,
+      scope: SCOPE,
+      callback: function(resp){
+        if(resp && resp.access_token){
+          state.accessToken = resp.access_token;
+          $("whoami").textContent = "Connected";
+          $("signInBtn").textContent = "Reconnect";
+          clearStatus();
+          fetchSheetData();
+        } else {
+          showStatus("Sign-in did not return an access token. Try again.", "error");
+        }
+      },
+      error_callback: function(err){
+        showStatus("Sign-in failed or was cancelled: " + (err && err.type ? err.type : "unknown error"), "error");
+      }
+    });
+    $("signInBtn").disabled = false;
+  }
+
+  $("signInBtn").addEventListener("click", function(){
+    if(!state.config){
+      openDrawer();
+      toast("Add your settings first.", "error");
+      return;
+    }
+    if(!state.tokenClient){
+      setUpGoogleAuth();
+    }
+    if(state.tokenClient){
+      state.tokenClient.requestAccessToken({ prompt: state.accessToken ? "" : "consent" });
+    }
+  });
+
+  // ---------- Sheets API ----------
+  function apiUrl(path, query){
+    var base = "https://sheets.googleapis.com/v4/spreadsheets/" + state.config.sheetId + path;
+    if(query) base += "?" + query;
+    return base;
+  }
+
+  function fetchSheetData(){
+    if(!state.accessToken){ return; }
+    showStatus("Loading sheet data…", "info");
+    var range = encodeURIComponent(state.config.tab);
+    fetch(apiUrl("/values/" + range), {
+      headers: { "Authorization": "Bearer " + state.accessToken }
+    })
+    .then(function(res){
+      if(res.status === 401){ throw { code: 401 }; }
+      if(!res.ok){ return res.json().then(function(j){ throw j; }); }
+      return res.json();
+    })
+    .then(function(data){
+      var values = data.values || [];
+      if(values.length === 0){
+        showStatus("The sheet returned no data. Check the tab name.", "error");
+        return;
+      }
+      state.headers = values[0];
+      state.rows = values.slice(1).map(function(rowValues, i){
+        return { values: rowValues, sheetRowNumber: i + 2 }; // +2: 1-index + header row
+      });
+      determineEditColumn();
+      clearStatus();
+      renderFilterControls();
+      renderTable();
+    })
+    .catch(function(err){
+      if(err && err.code === 401){
+        showStatus("Your session expired. Click 'Reconnect' to sign in again.", "error");
+        state.accessToken = null;
+        return;
+      }
+      var msg = (err && err.error && err.error.message) ? err.error.message : "Could not load the sheet.";
+      showStatus("Error: " + msg, "error");
+    });
+  }
+
+  function determineEditColumn(){
+    state.editColIndex = -1;
+    state.editOptions = [];
+    if(!state.config.editCol) return;
+    var idx = state.headers.findIndex(function(h){
+      return (h || "").trim().toLowerCase() === state.config.editCol.trim().toLowerCase();
+    });
+    if(idx === -1) return;
+    state.editColIndex = idx;
+    state.editOptions = state.config.editOptions.length ? state.config.editOptions : [];
+  }
+
+  function updateCell(rowObj, colIndex, newValue, selectEl){
+    var a1 = state.config.tab + "!" + colToLetter(colIndex) + rowObj.sheetRowNumber;
+    selectEl.classList.remove("saved", "save-error");
+    selectEl.classList.add("saving");
+    fetch(apiUrl("/values/" + encodeURIComponent(a1), "valueInputOption=RAW"), {
+      method: "PUT",
+      headers: {
+        "Authorization": "Bearer " + state.accessToken,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ range: a1, majorDimension: "ROWS", values: [[newValue]] })
+    })
+    .then(function(res){
+      if(!res.ok){ return res.json().then(function(j){ throw j; }); }
+      return res.json();
+    })
+    .then(function(){
+      rowObj.values[colIndex] = newValue;
+      selectEl.classList.remove("saving");
+      selectEl.classList.add("saved");
+      toast("Saved.", "success");
+      setTimeout(function(){ selectEl.classList.remove("saved"); }, 1200);
+    })
+    .catch(function(err){
+      selectEl.classList.remove("saving");
+      selectEl.classList.add("save-error");
+      var msg = (err && err.error && err.error.message) ? err.error.message : "Could not save that change.";
+      toast(msg, "error");
+    });
+  }
+
+  // ---------- filters ----------
+  function autoDetectFilterColumns(){
+    if(state.config.filterCols && state.config.filterCols.length){
+      return state.config.filterCols.map(function(name){
+        return state.headers.findIndex(function(h){
+          return (h || "").trim().toLowerCase() === name.trim().toLowerCase();
+        });
+      }).filter(function(i){ return i !== -1; });
+    }
+    var candidates = [];
+    state.headers.forEach(function(h, idx){
+      if(idx === state.editColIndex) return;
+      var uniq = {};
+      state.rows.forEach(function(r){ uniq[r.values[idx] || ""] = true; });
+      var count = Object.keys(uniq).length;
+      if(count > 1 && count <= 15){ candidates.push({ idx: idx, count: count }); }
+    });
+    candidates.sort(function(a,b){ return a.count - b.count; });
+    return candidates.slice(0, 4).map(function(c){ return c.idx; });
+  }
+
+  function renderFilterControls(){
+    var container = $("filterControls");
+    container.innerHTML = "";
+    state.filters = {};
+    var cols = autoDetectFilterColumns();
+    cols.forEach(function(idx){
+      var uniqSet = {};
+      state.rows.forEach(function(r){ uniqSet[r.values[idx] || "(blank)"] = true; });
+      var values = Object.keys(uniqSet).sort();
+
+      var label = document.createElement("span");
+      label.className = "filter-label";
+      label.textContent = state.headers[idx];
+      container.appendChild(label);
+
+      var sel = document.createElement("select");
+      var optAll = document.createElement("option");
+      optAll.value = ""; optAll.textContent = "All";
+      sel.appendChild(optAll);
+      values.forEach(function(v){
+        var opt = document.createElement("option");
+        opt.value = v; opt.textContent = v;
+        sel.appendChild(opt);
+      });
+      sel.addEventListener("change", function(){
+        if(sel.value === "") delete state.filters[idx];
+        else state.filters[idx] = sel.value;
+        renderTable();
+      });
+      container.appendChild(sel);
+    });
+    $("toolbar").style.display = "flex";
+  }
+
+  $("searchBox").addEventListener("input", function(){
+    state.search = this.value.trim().toLowerCase();
+    renderTable();
+  });
+  $("refreshBtn").addEventListener("click", fetchSheetData);
+
+  function rowMatches(rowObj){
+    for(var idx in state.filters){
+      var wanted = state.filters[idx];
+      var actual = rowObj.values[idx] || "(blank)";
+      if(actual !== wanted) return false;
+    }
+    if(state.search){
+      var hit = rowObj.values.some(function(v){
+        return (v || "").toLowerCase().indexOf(state.search) !== -1;
+      });
+      if(!hit) return false;
+    }
+    return true;
+  }
+
+  // ---------- table rendering ----------
+  function renderTable(){
+    var headerRow = $("headerRow");
+    headerRow.innerHTML = "";
+    state.headers.forEach(function(h){
+      var th = document.createElement("th");
+      th.textContent = h;
+      headerRow.appendChild(th);
+    });
+
+    var body = $("bodyRows");
+    body.innerHTML = "";
+    var visible = state.rows.filter(rowMatches);
+
+    visible.forEach(function(rowObj){
+      var tr = document.createElement("tr");
+      state.headers.forEach(function(h, colIndex){
+        var td = document.createElement("td");
+        if(colIndex === state.editColIndex && state.editOptions.length){
+          td.classList.add("editable-cell");
+          var sel = document.createElement("select");
+          sel.className = "row-editor";
+          var current = rowObj.values[colIndex] || "";
+          var opts = state.editOptions.slice();
+          if(current && opts.indexOf(current) === -1) opts.unshift(current);
+          opts.forEach(function(optVal){
+            var opt = document.createElement("option");
+            opt.value = optVal; opt.textContent = optVal;
+            if(optVal === current) opt.selected = true;
+            sel.appendChild(opt);
+          });
+          sel.addEventListener("change", function(){
+            updateCell(rowObj, colIndex, sel.value, sel);
+          });
+          td.appendChild(sel);
+        } else {
+          td.textContent = rowObj.values[colIndex] || "";
+        }
+        tr.appendChild(td);
+      });
+      body.appendChild(tr);
+    });
+
+    $("dataTable").style.display = state.rows.length ? "table" : "none";
+    $("emptyState").style.display = state.rows.length ? "none" : "block";
+    $("rowCount").textContent = visible.length + " of " + state.rows.length + " rows";
+  }
+
+  // ---------- boot ----------
+  function boot(){
+    var cfg = loadConfigFromURL();
+    if(cfg){
+      state.config = cfg;
+      window.addEventListener("load", function(){
+        // give the GIS script a moment to attach to window.google
+        var tries = 0;
+        var iv = setInterval(function(){
+          tries++;
+          if(window.google && google.accounts && google.accounts.oauth2){
+            clearInterval(iv);
+            setUpGoogleAuth();
+          } else if(tries > 40){
+            clearInterval(iv);
+            showStatus("Could not load Google's sign-in library. Check your network and reload.", "error");
+          }
+        }, 100);
+      });
+    }
+  }
+  boot();
+
+})();
+</script>
+</body>
+</html>
