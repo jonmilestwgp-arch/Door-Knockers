@@ -91,6 +91,11 @@
   select.row-editor.saved{ border-color:var(--green); }
   select.row-editor.save-error{ border-color:var(--red); color:var(--red); }
 
+  input.row-checkbox{ width:17px; height:17px; cursor:pointer; accent-color:var(--teal); }
+  input.row-checkbox.saving{ outline:2px solid var(--amber); outline-offset:2px; }
+  input.row-checkbox.saved{ outline:2px solid var(--green); outline-offset:2px; }
+  input.row-checkbox.save-error{ outline:2px solid var(--red); outline-offset:2px; }
+
   .empty-state{ padding:60px 28px; text-align:center; color:var(--ink-soft); }
   .empty-state h2{ font-size:16px; color:var(--ink); margin-bottom:8px; }
   .empty-state p{ font-size:13.5px; max-width:480px; margin:0 auto; line-height:1.5; }
@@ -216,14 +221,19 @@
       <div class="hint">Comma-separated header names to show as dropdown filters. Leave blank to auto-detect columns with a small number of repeated values.</div>
     </div>
     <div class="field">
-      <label for="cfgEditCol">Editable column</label>
-      <input type="text" id="cfgEditCol" placeholder="Status">
-      <div class="hint">The header name of the field people should update from a dropdown. Leave blank to disable editing.</div>
+      <label for="cfgEditCol">Dropdown column</label>
+      <input type="text" id="cfgEditCol" value="60 Sec" placeholder="Status">
+      <div class="hint">The header name of the field people should update from a dropdown. Leave blank to disable this dropdown.</div>
     </div>
     <div class="field">
-      <label for="cfgEditOptions">Editable column options</label>
-      <input type="text" id="cfgEditOptions" placeholder="Not started, In progress, Done">
+      <label for="cfgEditOptions">Dropdown column options</label>
+      <input type="text" id="cfgEditOptions" value="Not visited, Delivered/not in, Will email, To collect, Collected, Refused, Cannot find, No access, Vacant, Holiday" placeholder="Not started, In progress, Done">
       <div class="hint">Comma-separated allowed values for the dropdown above.</div>
+    </div>
+    <div class="field">
+      <label for="cfgCheckboxCols">Checkbox columns</label>
+      <input type="text" id="cfgCheckboxCols" value="August Newsletter" placeholder="August Newsletter">
+      <div class="hint">Comma-separated header names to render as a tick box instead of text. Ticking writes TRUE, unticking writes FALSE back to the sheet.</div>
     </div>
   </div>
   <div class="drawer-foot">
@@ -248,8 +258,7 @@
     rows: [],        // array of {values:[...], sheetRowNumber: n}
     filters: {},      // colIndex -> selected value
     search: "",
-    editColIndex: -1,
-    editOptions: []
+    editColumns: {} // colIndex -> { type: 'dropdown'|'checkbox', options: [...] }
   };
 
   // ---------- helpers ----------
@@ -300,7 +309,8 @@
       tab: p.get("tab") || "Sheet1",
       filterCols: csvSplit(p.get("filterCols")),
       editCol: p.get("editCol") || "",
-      editOptions: csvSplit(p.get("editOptions"))
+      editOptions: csvSplit(p.get("editOptions")),
+      checkboxCols: csvSplit(p.get("checkboxCols"))
     };
   }
 
@@ -312,6 +322,7 @@
     if(cfg.filterCols.length) p.set("filterCols", cfg.filterCols.join(","));
     if(cfg.editCol) p.set("editCol", cfg.editCol);
     if(cfg.editOptions.length) p.set("editOptions", cfg.editOptions.join(","));
+    if(cfg.checkboxCols.length) p.set("checkboxCols", cfg.checkboxCols.join(","));
     var newUrl = window.location.pathname + "?" + p.toString();
     history.replaceState(null, "", newUrl);
   }
@@ -325,6 +336,7 @@
       $("cfgFilterCols").value = (state.config.filterCols || []).join(", ");
       $("cfgEditCol").value = state.config.editCol || "";
       $("cfgEditOptions").value = (state.config.editOptions || []).join(", ");
+      $("cfgCheckboxCols").value = (state.config.checkboxCols || []).join(", ");
     }
     $("overlay").className = "open";
     $("drawer").className = "open";
@@ -353,7 +365,8 @@
       tab: tab,
       filterCols: csvSplit($("cfgFilterCols").value),
       editCol: $("cfgEditCol").value.trim(),
-      editOptions: csvSplit($("cfgEditOptions").value)
+      editOptions: csvSplit($("cfgEditOptions").value),
+      checkboxCols: csvSplit($("cfgCheckboxCols").value)
     };
     state.config = cfg;
     saveConfigToURL(cfg);
@@ -433,7 +446,7 @@
       state.rows = values.slice(1).map(function(rowValues, i){
         return { values: rowValues, sheetRowNumber: i + 2 }; // +2: 1-index + header row
       });
-      determineEditColumn();
+      determineEditColumns();
       clearStatus();
       renderFilterControls();
       renderTable();
@@ -449,23 +462,38 @@
     });
   }
 
-  function determineEditColumn(){
-    state.editColIndex = -1;
-    state.editOptions = [];
-    if(!state.config.editCol) return;
-    var idx = state.headers.findIndex(function(h){
-      return (h || "").trim().toLowerCase() === state.config.editCol.trim().toLowerCase();
+  function findColIndex(name){
+    return state.headers.findIndex(function(h){
+      return (h || "").trim().toLowerCase() === name.trim().toLowerCase();
     });
-    if(idx === -1) return;
-    state.editColIndex = idx;
-    state.editOptions = state.config.editOptions.length ? state.config.editOptions : [];
   }
 
-  function updateCell(rowObj, colIndex, newValue, selectEl){
+  function determineEditColumns(){
+    state.editColumns = {};
+    if(state.config.editCol){
+      var dIdx = findColIndex(state.config.editCol);
+      if(dIdx !== -1 && state.config.editOptions.length){
+        state.editColumns[dIdx] = { type: "dropdown", options: state.config.editOptions };
+      }
+    }
+    (state.config.checkboxCols || []).forEach(function(name){
+      var cIdx = findColIndex(name);
+      if(cIdx !== -1){
+        state.editColumns[cIdx] = { type: "checkbox" };
+      }
+    });
+  }
+
+  function isChecked(rawValue){
+    var v = (rawValue || "").toString().trim().toLowerCase();
+    return v === "true" || v === "yes" || v === "1" || v === "x" || v === "✓";
+  }
+
+  function updateCell(rowObj, colIndex, newValue, fieldEl){
     var a1 = state.config.tab + "!" + colToLetter(colIndex) + rowObj.sheetRowNumber;
-    selectEl.classList.remove("saved", "save-error");
-    selectEl.classList.add("saving");
-    fetch(apiUrl("/values/" + encodeURIComponent(a1), "valueInputOption=RAW"), {
+    fieldEl.classList.remove("saved", "save-error");
+    fieldEl.classList.add("saving");
+    fetch(apiUrl("/values/" + encodeURIComponent(a1), "valueInputOption=USER_ENTERED"), {
       method: "PUT",
       headers: {
         "Authorization": "Bearer " + state.accessToken,
@@ -479,14 +507,14 @@
     })
     .then(function(){
       rowObj.values[colIndex] = newValue;
-      selectEl.classList.remove("saving");
-      selectEl.classList.add("saved");
+      fieldEl.classList.remove("saving");
+      fieldEl.classList.add("saved");
       toast("Saved.", "success");
-      setTimeout(function(){ selectEl.classList.remove("saved"); }, 1200);
+      setTimeout(function(){ fieldEl.classList.remove("saved"); }, 1200);
     })
     .catch(function(err){
-      selectEl.classList.remove("saving");
-      selectEl.classList.add("save-error");
+      fieldEl.classList.remove("saving");
+      fieldEl.classList.add("save-error");
       var msg = (err && err.error && err.error.message) ? err.error.message : "Could not save that change.";
       toast(msg, "error");
     });
@@ -503,7 +531,7 @@
     }
     var candidates = [];
     state.headers.forEach(function(h, idx){
-      if(idx === state.editColIndex) return;
+      if(state.editColumns[idx]) return;
       var uniq = {};
       state.rows.forEach(function(r){ uniq[r.values[idx] || ""] = true; });
       var count = Object.keys(uniq).length;
@@ -586,12 +614,13 @@
       var tr = document.createElement("tr");
       state.headers.forEach(function(h, colIndex){
         var td = document.createElement("td");
-        if(colIndex === state.editColIndex && state.editOptions.length){
+        var editCfg = state.editColumns[colIndex];
+        if(editCfg && editCfg.type === "dropdown"){
           td.classList.add("editable-cell");
           var sel = document.createElement("select");
           sel.className = "row-editor";
           var current = rowObj.values[colIndex] || "";
-          var opts = state.editOptions.slice();
+          var opts = editCfg.options.slice();
           if(current && opts.indexOf(current) === -1) opts.unshift(current);
           opts.forEach(function(optVal){
             var opt = document.createElement("option");
@@ -603,6 +632,16 @@
             updateCell(rowObj, colIndex, sel.value, sel);
           });
           td.appendChild(sel);
+        } else if(editCfg && editCfg.type === "checkbox"){
+          td.classList.add("editable-cell");
+          var cb = document.createElement("input");
+          cb.type = "checkbox";
+          cb.className = "row-checkbox";
+          cb.checked = isChecked(rowObj.values[colIndex]);
+          cb.addEventListener("change", function(){
+            updateCell(rowObj, colIndex, cb.checked ? "TRUE" : "FALSE", cb);
+          });
+          td.appendChild(cb);
         } else {
           td.textContent = rowObj.values[colIndex] || "";
         }
