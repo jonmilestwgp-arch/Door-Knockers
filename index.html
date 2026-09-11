@@ -47,6 +47,14 @@
   button.ghost{ border-color:transparent; background:transparent; }
   button.ghost:hover{ background:var(--paper); }
   button:disabled{ opacity:0.5; cursor:default; }
+  button.icon-btn{
+    width:34px; height:34px; padding:0; border-radius:50%; font-size:16px;
+    display:inline-flex; align-items:center; justify-content:center;
+  }
+  #signInBtn.status-good{ background:var(--green); border-color:var(--green); color:#fff; }
+  #signInBtn.status-good:hover{ background:#336642; border-color:#336642; }
+  #signInBtn.status-bad{ background:var(--red); border-color:var(--red); color:#fff; }
+  #signInBtn.status-bad:hover{ background:#96352a; border-color:#96352a; }
 
   /* ---- Status strip ---- */
   #statusStrip{ padding: 10px 28px; font-size:13px; border-bottom:1px solid var(--line); display:none; }
@@ -189,9 +197,8 @@
   </div>
   <div class="actions">
     <span id="whoami" style="font-size:12.5px;color:var(--ink-soft);"></span>
-    <button id="signInBtn" class="primary">Sign in with Google</button>
+    <button id="signInBtn" class="icon-btn primary" title="Sign in with Google" aria-label="Sign in with Google">⟲</button>
     <button id="filtersBtn" class="ghost" title="Filters">☰ Filters</button>
-    <button id="settingsBtn" class="ghost" title="Settings">⚙ Settings</button>
   </div>
 </header>
 
@@ -304,7 +311,9 @@
     filters: {},      // colIndex -> selected value
     search: "",
     editColumns: {}, // colIndex -> { type: 'dropdown'|'checkbox', options: [...] }
-    hiddenCols: {}   // colIndex -> true when toggled off by the user
+    hiddenCols: {},  // colIndex -> true when toggled off by the user
+    pollTimer: null,
+    nextPollAt: null
   };
 
   // ---------- helpers ----------
@@ -414,7 +423,6 @@
     $("filterDrawer").className = "open";
   }
 
-  $("settingsBtn").addEventListener("click", openDrawer);
   $("closeDrawerBtn").addEventListener("click", closeDrawer);
   $("cancelSettingsBtn").addEventListener("click", closeDrawer);
   $("overlay").addEventListener("click", closeAllPanels);
@@ -435,6 +443,13 @@
   });
 
   // ---------- Google auth ----------
+  function setConnectionStatus(status){
+    var btn = $("signInBtn");
+    btn.classList.remove("status-good", "status-bad");
+    if(status === "good") btn.classList.add("status-good");
+    else if(status === "bad") btn.classList.add("status-bad");
+  }
+
   function setUpGoogleAuth(){
     if(!window.google || !google.accounts || !google.accounts.oauth2){
       showStatus("Google sign-in script hasn't loaded yet. Check your connection and reload.", "error");
@@ -448,7 +463,9 @@
         if(resp && resp.access_token){
           state.accessToken = resp.access_token;
           $("whoami").textContent = "Connected";
-          $("signInBtn").textContent = "Reconnect";
+          $("signInBtn").title = "Reconnect";
+          $("signInBtn").setAttribute("aria-label", "Reconnect");
+          setConnectionStatus("good");
           clearStatus();
           fetchSheetData();
         } else {
@@ -483,9 +500,10 @@
     return base;
   }
 
-  function fetchSheetData(){
+  function fetchSheetData(opts){
+    opts = opts || {};
     if(!state.accessToken){ return; }
-    showStatus("Loading sheet data…", "info");
+    if(!opts.silent) showStatus("Loading sheet data…", "info");
     var range = encodeURIComponent(state.config.tab);
     fetch(apiUrl("/values/" + range), {
       headers: { "Authorization": "Bearer " + state.accessToken }
@@ -507,19 +525,51 @@
       });
       determineEditColumns();
       clearStatus();
+      setConnectionStatus("good");
       renderFilterControls();
       renderColumnControls();
       renderTable();
+      schedulePoll(POLL_INTERVAL_MS);
     })
     .catch(function(err){
       if(err && err.code === 401){
-        showStatus("Your session expired. Click 'Reconnect' to sign in again.", "error");
+        showStatus("Your session expired. Click the reconnect icon to sign in again.", "error");
         state.accessToken = null;
+        setConnectionStatus("bad");
+        cancelPoll();
         return;
       }
       var msg = (err && err.error && err.error.message) ? err.error.message : "Could not load the sheet.";
       showStatus("Error: " + msg, "error");
+      schedulePoll(POLL_INTERVAL_MS); // transient failure - keep trying on schedule
     });
+  }
+
+  // ---------- background polling ----------
+  var POLL_INTERVAL_MS = 60000;
+  var PUSH_WINDOW_MS = 10000;
+  var PUSH_AMOUNT_MS = 10000;
+
+  function schedulePoll(delayMs){
+    if(state.pollTimer) clearTimeout(state.pollTimer);
+    state.nextPollAt = Date.now() + delayMs;
+    state.pollTimer = setTimeout(function(){
+      fetchSheetData({ silent: true });
+    }, delayMs);
+  }
+
+  function cancelPoll(){
+    if(state.pollTimer) clearTimeout(state.pollTimer);
+    state.pollTimer = null;
+    state.nextPollAt = null;
+  }
+
+  function notePendingEditForPoll(){
+    if(!state.nextPollAt) return;
+    var remaining = state.nextPollAt - Date.now();
+    if(remaining <= PUSH_WINDOW_MS){
+      schedulePoll(Math.max(remaining, 0) + PUSH_AMOUNT_MS);
+    }
   }
 
   function findColIndex(name){
@@ -581,6 +631,7 @@
   }
 
   function updateCell(rowObj, colIndex, newValue, fieldEl){
+    notePendingEditForPoll();
     var a1 = state.config.tab + "!" + colToLetter(colIndex) + rowObj.sheetRowNumber;
     fieldEl.classList.remove("saved", "save-error");
     fieldEl.classList.add("saving");
@@ -635,12 +686,24 @@
   function renderFilterControls(){
     var container = $("filterControls");
     container.innerHTML = "";
-    state.filters = {};
     var cols = autoDetectFilterColumns();
+
+    // Drop any active filter whose column is no longer part of the detected set.
+    Object.keys(state.filters).forEach(function(idxStr){
+      if(cols.indexOf(Number(idxStr)) === -1) delete state.filters[idxStr];
+    });
+
     cols.forEach(function(idx){
       var uniqSet = {};
       state.rows.forEach(function(r){ uniqSet[r.values[idx] || "(blank)"] = true; });
       var values = Object.keys(uniqSet).sort();
+
+      // If the previously-selected value no longer exists in the data, clear it rather than silently keep a stale filter.
+      var currentSelection = state.filters[idx];
+      if(currentSelection !== undefined && values.indexOf(currentSelection) === -1){
+        delete state.filters[idx];
+        currentSelection = undefined;
+      }
 
       var wrap = document.createElement("div");
       wrap.className = "filter-field";
@@ -655,6 +718,7 @@
       values.forEach(function(v){
         var opt = document.createElement("option");
         opt.value = v; opt.textContent = v;
+        if(currentSelection === v) opt.selected = true;
         sel.appendChild(opt);
       });
       sel.addEventListener("change", function(){
@@ -671,7 +735,7 @@
     state.search = this.value.trim().toLowerCase();
     renderTable();
   });
-  $("refreshBtn").addEventListener("click", fetchSheetData);
+  $("refreshBtn").addEventListener("click", function(){ fetchSheetData(); });
 
   function rowMatches(rowObj){
     for(var idx in state.filters){
