@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Sheet Ledger</title>
+<title>Canvassing</title>
 <style>
   :root{
     --paper: #F6F7F5;
@@ -48,8 +48,8 @@
   button.ghost:hover{ background:var(--paper); }
   button:disabled{ opacity:0.5; cursor:default; }
   button.icon-btn{
-    width:34px; height:34px; padding:0; border-radius:50%; font-size:16px;
-    display:inline-flex; align-items:center; justify-content:center;
+    width:38px; height:38px; padding:0; border-radius:4px; font-size:22px; font-weight:700;
+    display:inline-flex; align-items:center; justify-content:center; line-height:1;
   }
   #signInBtn.status-good{ background:var(--green); border-color:var(--green); color:#fff; }
   #signInBtn.status-good:hover{ background:#336642; border-color:#336642; }
@@ -61,6 +61,18 @@
   #statusStrip.show{ display:block; }
   #statusStrip.error{ background:#FBEEEC; color:var(--red); }
   #statusStrip.info{ background:#EEF3F1; color:var(--teal-deep); }
+
+  /* ---- Active filters bar ---- */
+  .active-filters{
+    display:none; flex-wrap:wrap; gap:8px; align-items:center;
+    padding:10px 28px; border-bottom:1px solid var(--line); background:var(--paper-raised);
+  }
+  .active-filters.show{ display:flex; }
+  .active-filters h4{
+    margin:0; font-size:12px; font-weight:600; color:var(--teal-deep);
+    background:#EEF3F1; border:1px solid var(--line); border-radius:3px;
+    padding:4px 10px; line-height:1.3; white-space:nowrap;
+  }
 
   /* ---- Toolbar ---- */
   .toolbar{
@@ -193,7 +205,7 @@
 <header class="topbar">
   <div class="brand">
     <span class="mark">SHEET://</span>
-    <h1 id="titleText">Sheet Ledger</h1>
+    <h1 id="titleText">Canvassing</h1>
   </div>
   <div class="actions">
     <span id="whoami" style="font-size:12.5px;color:var(--ink-soft);"></span>
@@ -203,6 +215,7 @@
 </header>
 
 <div id="statusStrip"></div>
+<div id="activeFilters" class="active-filters"></div>
 
 <div class="table-wrap">
   <div class="empty-state" id="emptyState">
@@ -753,7 +766,25 @@
   }
 
   // ---------- table rendering ----------
+  function renderActiveFilters(){
+    var container = $("activeFilters");
+    container.innerHTML = "";
+    var keys = Object.keys(state.filters);
+    if(keys.length === 0){
+      container.classList.remove("show");
+      return;
+    }
+    container.classList.add("show");
+    keys.forEach(function(idxStr){
+      var idx = Number(idxStr);
+      var h4 = document.createElement("h4");
+      h4.textContent = state.headers[idx] + ": " + state.filters[idxStr];
+      container.appendChild(h4);
+    });
+  }
+
   function renderTable(){
+    renderActiveFilters();
     var headerRow = $("headerRow");
     headerRow.innerHTML = "";
     state.headers.forEach(function(h, colIndex){
