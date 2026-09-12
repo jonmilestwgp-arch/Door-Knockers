@@ -31,7 +31,6 @@
     background:var(--paper-raised);
   }
   .brand{ display:flex; align-items:baseline; gap:10px; }
-  .brand .mark{ font-family:var(--mono); font-size:13px; color:var(--teal); letter-spacing:0.02em; }
   .brand h1{ font-size:19px; margin:0; font-weight:600; }
   .actions{ display:flex; gap:10px; align-items:center; }
 
@@ -64,15 +63,25 @@
 
   /* ---- Active filters bar ---- */
   .active-filters{
-    display:none; flex-wrap:wrap; gap:8px; align-items:center;
+    display:none; flex-wrap:wrap; gap:8px; align-items:flex-start;
     padding:10px 28px; border-bottom:1px solid var(--line); background:var(--paper-raised);
   }
   .active-filters.show{ display:flex; }
   .active-filters h4{
+    display:flex; align-items:flex-start; gap:6px; max-width:260px;
     margin:0; font-size:12px; font-weight:600; color:var(--teal-deep);
     background:#EEF3F1; border:1px solid var(--line); border-radius:3px;
-    padding:4px 10px; line-height:1.3; white-space:nowrap;
+    padding:4px 6px 4px 10px; line-height:1.35;
   }
+  .active-filters .chip-label{
+    flex:1; min-width:0; white-space:normal; overflow-wrap:break-word; word-break:break-word;
+    padding-top:1px;
+  }
+  .active-filters .chip-remove{
+    flex:none; border:none; background:none; cursor:pointer; color:var(--teal-deep);
+    font-size:15px; line-height:1; padding:1px 2px; opacity:0.55; border-radius:2px;
+  }
+  .active-filters .chip-remove:hover{ opacity:1; background:rgba(255,255,255,0.6); }
 
   /* ---- Toolbar ---- */
   .toolbar{
@@ -204,13 +213,11 @@
 
 <header class="topbar">
   <div class="brand">
-    <span class="mark">SHEET://</span>
     <h1 id="titleText">Canvassing</h1>
   </div>
   <div class="actions">
-    <span id="whoami" style="font-size:12.5px;color:var(--ink-soft);"></span>
-    <button id="signInBtn" class="icon-btn primary" title="Sign in with Google" aria-label="Sign in with Google">⟲</button>
     <button id="filtersBtn" class="ghost" title="Filters">☰ Filters</button>
+    <button id="signInBtn" class="icon-btn primary" title="Sign in with Google" aria-label="Sign in with Google">⟲</button>
   </div>
 </header>
 
@@ -475,7 +482,6 @@
       callback: function(resp){
         if(resp && resp.access_token){
           state.accessToken = resp.access_token;
-          $("whoami").textContent = "Connected";
           $("signInBtn").title = "Reconnect";
           $("signInBtn").setAttribute("aria-label", "Reconnect");
           setConnectionStatus("good");
@@ -778,7 +784,25 @@
     keys.forEach(function(idxStr){
       var idx = Number(idxStr);
       var h4 = document.createElement("h4");
-      h4.textContent = state.headers[idx] + ": " + state.filters[idxStr];
+
+      var label = document.createElement("span");
+      label.className = "chip-label";
+      label.textContent = state.headers[idx] + ": " + state.filters[idxStr];
+      h4.appendChild(label);
+
+      var remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "chip-remove";
+      remove.textContent = "×";
+      remove.title = "Remove this filter";
+      remove.setAttribute("aria-label", "Remove filter: " + label.textContent);
+      remove.addEventListener("click", function(){
+        delete state.filters[idxStr];
+        renderFilterControls();
+        renderTable();
+      });
+      h4.appendChild(remove);
+
       container.appendChild(h4);
     });
   }
