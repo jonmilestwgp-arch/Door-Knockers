@@ -303,9 +303,14 @@
       <div class="hint">Comma-separated allowed values for the dropdown above.</div>
     </div>
     <div class="field">
-      <label for="cfgCheckboxCols">Checkbox columns</label>
+      <label for="cfgCheckboxCols">Checkbox columns (exact names)</label>
       <input type="text" id="cfgCheckboxCols" value="August Newsletter" placeholder="August Newsletter">
       <div class="hint">Comma-separated header names to render as a tick box instead of text. Ticking writes TRUE, unticking writes FALSE back to the sheet.</div>
+    </div>
+    <div class="field">
+      <label for="cfgCheckboxKeywords">Checkbox columns (by keyword)</label>
+      <input type="text" id="cfgCheckboxKeywords" value="News" placeholder="News">
+      <div class="hint">Comma-separated words to match anywhere in a header name (not case-sensitive). Any column containing one of these — including ones added to the sheet later — becomes a tick box automatically, with no need to edit this page again.</div>
     </div>
   </div>
   <div class="drawer-foot">
@@ -385,7 +390,8 @@
       filterCols: csvSplit(p.get("filterCols")),
       editCol: p.get("editCol") || "",
       editOptions: csvSplit(p.get("editOptions")),
-      checkboxCols: csvSplit(p.get("checkboxCols"))
+      checkboxCols: csvSplit(p.get("checkboxCols")),
+      checkboxKeywords: csvSplit(p.get("checkboxKeywords"))
     };
   }
 
@@ -398,6 +404,7 @@
     if(cfg.editCol) p.set("editCol", cfg.editCol);
     if(cfg.editOptions.length) p.set("editOptions", cfg.editOptions.join(","));
     if(cfg.checkboxCols.length) p.set("checkboxCols", cfg.checkboxCols.join(","));
+    if(cfg.checkboxKeywords.length) p.set("checkboxKeywords", cfg.checkboxKeywords.join(","));
     var newUrl = window.location.pathname + "?" + p.toString();
     history.replaceState(null, "", newUrl);
   }
@@ -411,7 +418,8 @@
       filterCols: csvSplit($("cfgFilterCols").value),
       editCol: $("cfgEditCol").value.trim(),
       editOptions: csvSplit($("cfgEditOptions").value),
-      checkboxCols: csvSplit($("cfgCheckboxCols").value)
+      checkboxCols: csvSplit($("cfgCheckboxCols").value),
+      checkboxKeywords: csvSplit($("cfgCheckboxKeywords").value)
     };
   }
 
@@ -431,6 +439,7 @@
       $("cfgEditCol").value = state.config.editCol || "";
       $("cfgEditOptions").value = (state.config.editOptions || []).join(", ");
       $("cfgCheckboxCols").value = (state.config.checkboxCols || []).join(", ");
+      $("cfgCheckboxKeywords").value = (state.config.checkboxKeywords || []).join(", ");
     }
     $("overlay").className = "open";
     $("drawer").className = "open";
@@ -611,6 +620,17 @@
         state.editColumns[cIdx] = { type: "checkbox" };
       }
     });
+    var keywords = (state.config.checkboxKeywords || []).map(function(k){ return k.toLowerCase(); }).filter(Boolean);
+    if(keywords.length){
+      state.headers.forEach(function(h, idx){
+        if(state.editColumns[idx]) return; // don't override an explicit dropdown/checkbox assignment
+        var hLower = (h || "").toLowerCase();
+        var matches = keywords.some(function(k){ return hLower.indexOf(k) !== -1; });
+        if(matches){
+          state.editColumns[idx] = { type: "checkbox" };
+        }
+      });
+    }
   }
 
   function isChecked(rawValue){
@@ -899,4 +919,4 @@
 })();
 </script>
 </body>
-</html>
+</html> 
