@@ -689,19 +689,24 @@
     return v === "true" || v === "yes" || v === "1" || v === "x" || v === "✓";
   }
 
-  // Pulls the full contiguous run of digits out of a cell that may contain
-  // just a number ("136"), just a name ("The Willows"), or both ("136 The Willows").
-  // Returns null when there's no number at all, so those rows can be shown regardless of the odd/even filter.
-  function extractNumber(rawValue){
-    var m = (rawValue || "").toString().match(/\d+/);
-    if(!m) return null;
-    return parseInt(m[0], 10);
+  // Pulls every contiguous run of digits out of a cell. A cell can contain
+  // just a number ("136"), just a name ("The Willows"), a name and number
+  // ("136 The Willows"), or two combined house numbers ("6/7", "52/53").
+  function extractNumbers(rawValue){
+    var matches = (rawValue || "").toString().match(/\d+/g);
+    if(!matches) return [];
+    return matches.map(function(s){ return parseInt(s, 10); });
   }
 
+  // Returns "odd", "even", or null. Null covers both "no number at all" (a name-only
+  // cell) and "combined dwelling with mixed parity" (e.g. 6/7, 52/53) - both cases
+  // should always be shown regardless of which odd/even filter is selected.
   function getParity(rawValue){
-    var n = extractNumber(rawValue);
-    if(n === null) return null;
-    return (n % 2 === 0) ? "even" : "odd";
+    var nums = extractNumbers(rawValue);
+    if(nums.length === 0) return null;
+    var parities = nums.map(function(n){ return (n % 2 === 0) ? "even" : "odd"; });
+    var allSame = parities.every(function(p){ return p === parities[0]; });
+    return allSame ? parities[0] : null;
   }
 
   function setColumnVisible(colIndex, visible){
