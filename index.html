@@ -110,6 +110,8 @@
   }
   tbody td{ padding:9px 14px; border-bottom:1px solid var(--line); font-family:var(--mono); white-space:nowrap; }
   tbody tr:hover td{ background:#EFF3F1; }
+  tbody tr.row-highlight td{ background:#F7E2E4; }
+  tbody tr.row-highlight:hover td{ background:#F2D5D8; }
   tbody td.editable-cell{ font-family:var(--sans); }
 
   select.row-editor{
@@ -179,6 +181,18 @@
     width:100%; font-family:var(--sans); font-size:13.5px; padding:8px 10px; border-radius:3px;
     border:1px solid var(--line-strong); background:var(--paper); color:var(--ink);
   }
+  .checklist{
+    border:1px solid var(--line-strong); border-radius:3px; background:var(--paper);
+    max-height:180px; overflow-y:auto;
+  }
+  .checklist-row{
+    display:flex; align-items:center; gap:8px; padding:7px 10px; font-size:13px;
+    font-weight:400; cursor:pointer; border-bottom:1px solid var(--line);
+  }
+  .checklist-row:last-child{ border-bottom:none; }
+  .checklist-row:hover{ background:#EEF3F1; }
+  .checklist-row input[type="checkbox"]{ accent-color:var(--teal); cursor:pointer; }
+  .checklist-row span{ overflow-wrap:break-word; }
 
   /* ---- Column visibility ---- */
   @media (max-width: 700px){
@@ -227,9 +241,7 @@
 <div class="table-wrap">
   <div class="empty-state" id="emptyState">
     <h2>Nothing loaded yet</h2>
-    <p>Click the button and sign in (it's in test mode at the moment so you will need to click continue twice).</p>
-    <p>Use the Filter button to narrow down your search and hide the columns you don't need.</p>
-    <p>Updates may take upto 60 seconds.</p>
+    <p>Open Settings, add your Google OAuth client ID and the sheet you want to work with, then sign in. Data will appear here as a filterable, editable ledger.</p>
   </div>
   <table id="dataTable" style="display:none;">
     <thead><tr id="headerRow"></tr></thead>
@@ -314,6 +326,26 @@
       <input type="text" id="cfgCheckboxKeywords" value="News" placeholder="News">
       <div class="hint">Comma-separated words to match anywhere in a header name (not case-sensitive). Any column containing one of these — including ones added to the sheet later — becomes a tick box automatically, with no need to edit this page again.</div>
     </div>
+    <div class="field">
+      <label for="cfgNumberCol">Odd/Even column</label>
+      <input type="text" id="cfgNumberCol" value="Number" placeholder="Number">
+      <div class="hint">Header name of the column to filter by odd/even house number. Cells can contain just a number, just a name, or a name and number together — the number is picked out automatically and cells with no number at all are always shown regardless of this filter.</div>
+    </div>
+    <div class="field">
+      <label for="cfgMultiSelectCols">Multi-select filter columns</label>
+      <input type="text" id="cfgMultiSelectCols" value="60 Sec" placeholder="60 Sec">
+      <div class="hint">Comma-separated header names (from the Filter columns list above) that should let people tick several values at once instead of picking just one.</div>
+    </div>
+    <div class="field">
+      <label for="cfgHighlightCol">Row-highlight column</label>
+      <input type="text" id="cfgHighlightCol" value="60 Sec" placeholder="60 Sec">
+      <div class="hint">Header name to watch for the values below.</div>
+    </div>
+    <div class="field">
+      <label for="cfgHighlightValues">Row-highlight values</label>
+      <input type="text" id="cfgHighlightValues" value="Refused, Vacant, Holiday, No access, Cannot find" placeholder="Refused, Vacant">
+      <div class="hint">Comma-separated values that, when found in the row-highlight column, tint that entire row a pale dusky pink.</div>
+    </div>
   </div>
   <div class="drawer-foot">
     <button class="ghost" id="cancelSettingsBtn">Cancel</button>
@@ -337,6 +369,7 @@
     rows: [],        // array of {values:[...], sheetRowNumber: n}
     filters: {},      // colIndex -> selected value
     search: "",
+    parityFilter: "", // "" | "odd" | "even"
     editColumns: {}, // colIndex -> { type: 'dropdown'|'checkbox', options: [...] }
     hiddenCols: {},  // colIndex -> true when toggled off by the user
     pollTimer: null,
@@ -393,7 +426,11 @@
       editCol: p.get("editCol") || "",
       editOptions: csvSplit(p.get("editOptions")),
       checkboxCols: csvSplit(p.get("checkboxCols")),
-      checkboxKeywords: csvSplit(p.get("checkboxKeywords"))
+      checkboxKeywords: csvSplit(p.get("checkboxKeywords")),
+      numberCol: p.get("numberCol") || "Number",
+      multiSelectCols: csvSplit(p.get("multiSelectCols")),
+      highlightCol: p.get("highlightCol") || "",
+      highlightValues: csvSplit(p.get("highlightValues"))
     };
   }
 
@@ -407,6 +444,10 @@
     if(cfg.editOptions.length) p.set("editOptions", cfg.editOptions.join(","));
     if(cfg.checkboxCols.length) p.set("checkboxCols", cfg.checkboxCols.join(","));
     if(cfg.checkboxKeywords.length) p.set("checkboxKeywords", cfg.checkboxKeywords.join(","));
+    if(cfg.numberCol) p.set("numberCol", cfg.numberCol);
+    if(cfg.multiSelectCols.length) p.set("multiSelectCols", cfg.multiSelectCols.join(","));
+    if(cfg.highlightCol) p.set("highlightCol", cfg.highlightCol);
+    if(cfg.highlightValues.length) p.set("highlightValues", cfg.highlightValues.join(","));
     var newUrl = window.location.pathname + "?" + p.toString();
     history.replaceState(null, "", newUrl);
   }
@@ -421,7 +462,11 @@
       editCol: $("cfgEditCol").value.trim(),
       editOptions: csvSplit($("cfgEditOptions").value),
       checkboxCols: csvSplit($("cfgCheckboxCols").value),
-      checkboxKeywords: csvSplit($("cfgCheckboxKeywords").value)
+      checkboxKeywords: csvSplit($("cfgCheckboxKeywords").value),
+      numberCol: $("cfgNumberCol").value.trim() || "Number",
+      multiSelectCols: csvSplit($("cfgMultiSelectCols").value),
+      highlightCol: $("cfgHighlightCol").value.trim(),
+      highlightValues: csvSplit($("cfgHighlightValues").value)
     };
   }
 
@@ -442,6 +487,10 @@
       $("cfgEditOptions").value = (state.config.editOptions || []).join(", ");
       $("cfgCheckboxCols").value = (state.config.checkboxCols || []).join(", ");
       $("cfgCheckboxKeywords").value = (state.config.checkboxKeywords || []).join(", ");
+      $("cfgNumberCol").value = state.config.numberCol || "";
+      $("cfgMultiSelectCols").value = (state.config.multiSelectCols || []).join(", ");
+      $("cfgHighlightCol").value = state.config.highlightCol || "";
+      $("cfgHighlightValues").value = (state.config.highlightValues || []).join(", ");
     }
     $("overlay").className = "open";
     $("drawer").className = "open";
@@ -640,6 +689,21 @@
     return v === "true" || v === "yes" || v === "1" || v === "x" || v === "✓";
   }
 
+  // Pulls the full contiguous run of digits out of a cell that may contain
+  // just a number ("136"), just a name ("The Willows"), or both ("136 The Willows").
+  // Returns null when there's no number at all, so those rows can be shown regardless of the odd/even filter.
+  function extractNumber(rawValue){
+    var m = (rawValue || "").toString().match(/\d+/);
+    if(!m) return null;
+    return parseInt(m[0], 10);
+  }
+
+  function getParity(rawValue){
+    var n = extractNumber(rawValue);
+    if(n === null) return null;
+    return (n % 2 === 0) ? "even" : "odd";
+  }
+
   function setColumnVisible(colIndex, visible){
     if(visible) delete state.hiddenCols[colIndex];
     else state.hiddenCols[colIndex] = true;
@@ -724,10 +788,44 @@
     return candidates.slice(0, 4).map(function(c){ return c.idx; });
   }
 
+  function isMultiSelectCol(idx){
+    return (state.config.multiSelectCols || []).some(function(name){
+      return (state.headers[idx] || "").trim().toLowerCase() === name.trim().toLowerCase();
+    });
+  }
+
+  function renderParityControl(container){
+    var numIdx = findColIndex(state.config.numberCol || "Number");
+    if(numIdx === -1) return;
+
+    var wrap = document.createElement("div");
+    wrap.className = "filter-field";
+    var label = document.createElement("label");
+    label.textContent = state.headers[numIdx] + " (odd/even)";
+    wrap.appendChild(label);
+
+    var sel = document.createElement("select");
+    [["", "All"], ["odd", "Odd"], ["even", "Even"]].forEach(function(pair){
+      var opt = document.createElement("option");
+      opt.value = pair[0]; opt.textContent = pair[1];
+      if(state.parityFilter === pair[0]) opt.selected = true;
+      sel.appendChild(opt);
+    });
+    sel.addEventListener("change", function(){
+      state.parityFilter = sel.value;
+      renderTable();
+    });
+    wrap.appendChild(sel);
+    container.appendChild(wrap);
+  }
+
   function renderFilterControls(){
     var container = $("filterControls");
     container.innerHTML = "";
     var cols = autoDetectFilterColumns();
+    var numIdx = findColIndex(state.config.numberCol || "Number");
+
+    renderParityControl(container);
 
     // Drop any active filter whose column is no longer part of the detected set.
     Object.keys(state.filters).forEach(function(idxStr){
@@ -735,16 +833,11 @@
     });
 
     cols.forEach(function(idx){
+      if(idx === numIdx) return; // the Odd/Even column gets its own dedicated control above
+
       var uniqSet = {};
       state.rows.forEach(function(r){ uniqSet[r.values[idx] || "(blank)"] = true; });
       var values = Object.keys(uniqSet).sort();
-
-      // If the previously-selected value no longer exists in the data, clear it rather than silently keep a stale filter.
-      var currentSelection = state.filters[idx];
-      if(currentSelection !== undefined && values.indexOf(currentSelection) === -1){
-        delete state.filters[idx];
-        currentSelection = undefined;
-      }
 
       var wrap = document.createElement("div");
       wrap.className = "filter-field";
@@ -752,22 +845,65 @@
       label.textContent = state.headers[idx];
       wrap.appendChild(label);
 
-      var sel = document.createElement("select");
-      var optAll = document.createElement("option");
-      optAll.value = ""; optAll.textContent = "All";
-      sel.appendChild(optAll);
-      values.forEach(function(v){
-        var opt = document.createElement("option");
-        opt.value = v; opt.textContent = v;
-        if(currentSelection === v) opt.selected = true;
-        sel.appendChild(opt);
-      });
-      sel.addEventListener("change", function(){
-        if(sel.value === "") delete state.filters[idx];
-        else state.filters[idx] = sel.value;
-        renderTable();
-      });
-      wrap.appendChild(sel);
+      if(isMultiSelectCol(idx)){
+        // Multi-select: several values can be ticked at once.
+        var selectedSet = Array.isArray(state.filters[idx]) ? state.filters[idx] : [];
+        selectedSet = selectedSet.filter(function(v){ return values.indexOf(v) !== -1; });
+        if(selectedSet.length) state.filters[idx] = selectedSet;
+        else delete state.filters[idx];
+
+        var list = document.createElement("div");
+        list.className = "checklist";
+        values.forEach(function(v){
+          var row = document.createElement("label");
+          row.className = "checklist-row";
+          var cb = document.createElement("input");
+          cb.type = "checkbox";
+          cb.checked = selectedSet.indexOf(v) !== -1;
+          cb.addEventListener("change", function(){
+            var current = Array.isArray(state.filters[idx]) ? state.filters[idx].slice() : [];
+            if(cb.checked){
+              if(current.indexOf(v) === -1) current.push(v);
+            } else {
+              current = current.filter(function(x){ return x !== v; });
+            }
+            if(current.length) state.filters[idx] = current;
+            else delete state.filters[idx];
+            renderTable();
+          });
+          var span = document.createElement("span");
+          span.textContent = v;
+          row.appendChild(cb);
+          row.appendChild(span);
+          list.appendChild(row);
+        });
+        wrap.appendChild(list);
+      } else {
+        // Single-select dropdown (existing behaviour).
+        var currentSelection = state.filters[idx];
+        if(currentSelection !== undefined && values.indexOf(currentSelection) === -1){
+          delete state.filters[idx];
+          currentSelection = undefined;
+        }
+
+        var sel = document.createElement("select");
+        var optAll = document.createElement("option");
+        optAll.value = ""; optAll.textContent = "All";
+        sel.appendChild(optAll);
+        values.forEach(function(v){
+          var opt = document.createElement("option");
+          opt.value = v; opt.textContent = v;
+          if(currentSelection === v) opt.selected = true;
+          sel.appendChild(opt);
+        });
+        sel.addEventListener("change", function(){
+          if(sel.value === "") delete state.filters[idx];
+          else state.filters[idx] = sel.value;
+          renderTable();
+        });
+        wrap.appendChild(sel);
+      }
+
       container.appendChild(wrap);
     });
   }
@@ -782,7 +918,19 @@
     for(var idx in state.filters){
       var wanted = state.filters[idx];
       var actual = rowObj.values[idx] || "(blank)";
-      if(actual !== wanted) return false;
+      if(Array.isArray(wanted)){
+        if(wanted.length && wanted.indexOf(actual) === -1) return false;
+      } else {
+        if(actual !== wanted) return false;
+      }
+    }
+    if(state.parityFilter){
+      var numIdxForMatch = findColIndex(state.config.numberCol || "Number");
+      if(numIdxForMatch !== -1){
+        var parity = getParity(rowObj.values[numIdxForMatch]);
+        // Cells with no number at all (a name only) always pass through, regardless of the filter.
+        if(parity !== null && parity !== state.parityFilter) return false;
+      }
     }
     if(state.search){
       var hit = rowObj.values.some(function(v){
@@ -794,38 +942,67 @@
   }
 
   // ---------- table rendering ----------
+  function makeFilterChip(labelText, onRemove){
+    var h4 = document.createElement("h4");
+    var label = document.createElement("span");
+    label.className = "chip-label";
+    label.textContent = labelText;
+    h4.appendChild(label);
+
+    var remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "chip-remove";
+    remove.textContent = "×";
+    remove.title = "Remove this filter";
+    remove.setAttribute("aria-label", "Remove filter: " + labelText);
+    remove.addEventListener("click", onRemove);
+    h4.appendChild(remove);
+    return h4;
+  }
+
   function renderActiveFilters(){
     var container = $("activeFilters");
     container.innerHTML = "";
     var keys = Object.keys(state.filters);
-    if(keys.length === 0){
+    var hasParity = !!state.parityFilter;
+
+    if(keys.length === 0 && !hasParity){
       container.classList.remove("show");
       return;
     }
     container.classList.add("show");
-    keys.forEach(function(idxStr){
-      var idx = Number(idxStr);
-      var h4 = document.createElement("h4");
 
-      var label = document.createElement("span");
-      label.className = "chip-label";
-      label.textContent = state.headers[idx] + ": " + state.filters[idxStr];
-      h4.appendChild(label);
-
-      var remove = document.createElement("button");
-      remove.type = "button";
-      remove.className = "chip-remove";
-      remove.textContent = "×";
-      remove.title = "Remove this filter";
-      remove.setAttribute("aria-label", "Remove filter: " + label.textContent);
-      remove.addEventListener("click", function(){
-        delete state.filters[idxStr];
+    if(hasParity){
+      var numIdx = findColIndex(state.config.numberCol || "Number");
+      var colName = numIdx !== -1 ? state.headers[numIdx] : (state.config.numberCol || "Number");
+      var parityLabel = state.parityFilter === "odd" ? "Odd" : "Even";
+      container.appendChild(makeFilterChip(colName + ": " + parityLabel, function(){
+        state.parityFilter = "";
         renderFilterControls();
         renderTable();
-      });
-      h4.appendChild(remove);
+      }));
+    }
 
-      container.appendChild(h4);
+    keys.forEach(function(idxStr){
+      var idx = Number(idxStr);
+      var wanted = state.filters[idxStr];
+      if(Array.isArray(wanted)){
+        wanted.forEach(function(v){
+          container.appendChild(makeFilterChip(state.headers[idx] + ": " + v, function(){
+            var current = (Array.isArray(state.filters[idxStr]) ? state.filters[idxStr] : []).filter(function(x){ return x !== v; });
+            if(current.length) state.filters[idxStr] = current;
+            else delete state.filters[idxStr];
+            renderFilterControls();
+            renderTable();
+          }));
+        });
+      } else {
+        container.appendChild(makeFilterChip(state.headers[idx] + ": " + wanted, function(){
+          delete state.filters[idxStr];
+          renderFilterControls();
+          renderTable();
+        }));
+      }
     });
   }
 
@@ -844,8 +1021,17 @@
     body.innerHTML = "";
     var visible = state.rows.filter(rowMatches);
 
+    var highlightIdx = state.config.highlightCol ? findColIndex(state.config.highlightCol) : -1;
+    var highlightValuesLower = (state.config.highlightValues || []).map(function(v){ return v.trim().toLowerCase(); });
+
     visible.forEach(function(rowObj){
       var tr = document.createElement("tr");
+      if(highlightIdx !== -1 && highlightValuesLower.length){
+        var cellVal = (rowObj.values[highlightIdx] || "").trim().toLowerCase();
+        if(highlightValuesLower.indexOf(cellVal) !== -1){
+          tr.classList.add("row-highlight");
+        }
+      }
       state.headers.forEach(function(h, colIndex){
         var td = document.createElement("td");
         if(state.hiddenCols[colIndex]) td.classList.add("col-hidden-cell");
