@@ -157,7 +157,7 @@
     width:100%; font-family:var(--mono); font-size:13px; padding:9px 10px;
     border-radius:3px; border:1px solid var(--line-strong); background:var(--paper);
   }
-  .field input[type="text"]:focus{ outline:none; border-color:var(--teal); }
+  .field input[type="text"]:focus, .field textarea:focus{ outline:none; border-color:var(--teal); }
 
   details.howto{ margin:18px 0; border:1px solid var(--line); border-radius:4px; padding:2px 14px; background:var(--paper); }
   details.howto summary{ cursor:pointer; padding:10px 0; font-size:13px; font-weight:600; color:var(--teal-deep); }
@@ -221,6 +221,13 @@
   #toast.success{ background:var(--green); }
 
   ::selection{ background:#CFE0DC; }
+
+  .sheet-select{
+    font-family:var(--sans); font-size:13.5px; font-weight:500; color:var(--ink);
+    border:1px solid var(--line-strong); border-radius:3px; background:var(--paper-raised);
+    padding:8px 10px; cursor:pointer; max-width:180px;
+  }
+  .sheet-select:hover{ border-color:var(--teal); }
 </style>
 </head>
 <body>
@@ -230,6 +237,7 @@
     <h1 id="titleText">Canvassing</h1>
   </div>
   <div class="actions">
+    <select id="sheetSelector" class="sheet-select" style="display:none;" title="Switch sheet"></select>
     <button id="filtersBtn" class="ghost" title="Filters">☰ Filters</button>
     <button id="signInBtn" class="icon-btn primary" title="Sign in with Google" aria-label="Sign in with Google">⟲</button>
   </div>
@@ -295,6 +303,12 @@
     <div class="field">
       <label for="cfgSheetId">Spreadsheet ID</label>
       <input type="text" id="cfgSheetId" value="1gvA0LwbIeRNIu-i4JVqsrhRKgJH_VyJNM_arSh0jbYQ" placeholder="1AbCDeFGhijKLmNoPQRstuVWxyz">
+      <div class="hint">Used as the only sheet if the list below is left blank, or as the fallback if the list below doesn't match anything.</div>
+    </div>
+    <div class="field">
+      <label for="cfgSheetsList">Multiple sheets (optional)</label>
+      <textarea id="cfgSheetsList" rows="4" placeholder="North Ward = 1AbCDeFGhijKLmNoPQRstuVWxyz&#10;South Ward = 1XyZ98765AbCdEfGhIjKlMnOp" style="width:100%; font-family:var(--mono); font-size:12.5px; padding:9px 10px; border-radius:3px; border:1px solid var(--line-strong); background:var(--paper); resize:vertical;"></textarea>
+      <div class="hint">One sheet per line, as "Display Name = Spreadsheet ID". With two or more lines, a dropdown appears in the top bar so people can switch which sheet they're working in — all sheets need the same tab name and column layout. Leave blank to just use the single Spreadsheet ID above.</div>
     </div>
     <div class="field">
       <label for="cfgTab">Sheet / tab name</label>
@@ -373,7 +387,8 @@
     editColumns: {}, // colIndex -> { type: 'dropdown'|'checkbox', options: [...] }
     hiddenCols: {},  // colIndex -> true when toggled off by the user
     pollTimer: null,
-    nextPollAt: null
+    nextPollAt: null,
+    sheets: [] // [{name, id}] parsed from the sheetsList setting
   };
 
   // ---------- helpers ----------
@@ -430,7 +445,8 @@
       numberCol: p.get("numberCol") || "Number",
       multiSelectCols: csvSplit(p.get("multiSelectCols")),
       highlightCol: p.get("highlightCol") || "",
-      highlightValues: csvSplit(p.get("highlightValues"))
+      highlightValues: csvSplit(p.get("highlightValues")),
+      sheetsList: p.get("sheetsList") || ""
     };
   }
 
@@ -448,6 +464,7 @@
     if(cfg.multiSelectCols.length) p.set("multiSelectCols", cfg.multiSelectCols.join(","));
     if(cfg.highlightCol) p.set("highlightCol", cfg.highlightCol);
     if(cfg.highlightValues.length) p.set("highlightValues", cfg.highlightValues.join(","));
+    if(cfg.sheetsList) p.set("sheetsList", cfg.sheetsList);
     var newUrl = window.location.pathname + "?" + p.toString();
     history.replaceState(null, "", newUrl);
   }
@@ -466,7 +483,8 @@
       numberCol: $("cfgNumberCol").value.trim() || "Number",
       multiSelectCols: csvSplit($("cfgMultiSelectCols").value),
       highlightCol: $("cfgHighlightCol").value.trim(),
-      highlightValues: csvSplit($("cfgHighlightValues").value)
+      highlightValues: csvSplit($("cfgHighlightValues").value),
+      sheetsList: $("cfgSheetsList").value
     };
   }
 
@@ -491,6 +509,7 @@
       $("cfgMultiSelectCols").value = (state.config.multiSelectCols || []).join(", ");
       $("cfgHighlightCol").value = state.config.highlightCol || "";
       $("cfgHighlightValues").value = (state.config.highlightValues || []).join(", ");
+      $("cfgSheetsList").value = state.config.sheetsList || "";
     }
     $("overlay").className = "open";
     $("drawer").className = "open";
@@ -1081,6 +1100,51 @@
     $("rowCount").textContent = visible.length + " of " + state.rows.length + " rows";
   }
 
+  // ---------- multi-sheet support ----------
+  function parseSheetsList(raw){
+    return (raw || "").split("\n").map(function(line){
+      var idx = line.indexOf("=");
+      if(idx === -1) return null;
+      var name = line.slice(0, idx).trim();
+      var id = line.slice(idx + 1).trim();
+      if(!name || !id) return null;
+      return { name: name, id: id };
+    }).filter(Boolean);
+  }
+
+  function resolveActiveSheet(cfg){
+    state.sheets = parseSheetsList(cfg.sheetsList);
+    if(state.sheets.length){
+      var stillValid = state.sheets.some(function(s){ return s.id === cfg.sheetId; });
+      if(!stillValid) cfg.sheetId = state.sheets[0].id;
+    }
+  }
+
+  function renderSheetSelector(){
+    var sel = $("sheetSelector");
+    if(state.sheets.length < 2){
+      sel.style.display = "none";
+      sel.innerHTML = "";
+      return;
+    }
+    sel.innerHTML = "";
+    state.sheets.forEach(function(s){
+      var opt = document.createElement("option");
+      opt.value = s.id;
+      opt.textContent = s.name;
+      if(s.id === state.config.sheetId) opt.selected = true;
+      sel.appendChild(opt);
+    });
+    sel.style.display = "";
+  }
+
+  $("sheetSelector").addEventListener("change", function(){
+    state.config.sheetId = this.value;
+    saveConfigToURL(state.config);
+    cancelPoll();
+    fetchSheetData();
+  });
+
   // ---------- boot ----------
   function boot(){
     var cfg = loadConfigFromURL();
@@ -1089,7 +1153,9 @@
       if(fromFields.clientId && fromFields.sheetId) cfg = fromFields;
     }
     if(cfg){
+      resolveActiveSheet(cfg);
       state.config = cfg;
+      renderSheetSelector();
       saveConfigToURL(cfg);
       window.addEventListener("load", function(){
         // give the GIS script a moment to attach to window.google
