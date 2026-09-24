@@ -1,0 +1,1376 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Canvassing</title>
+<style>
+  :root{
+    --paper: #F6F7F5;
+    --paper-raised: #FFFFFF;
+    --ink: #20262B;
+    --ink-soft: #5B6570;
+    --line: #DCE0DD;
+    --line-strong: #B9C0BB;
+    --teal: #3C6E71;
+    --teal-deep: #2A4F52;
+    --amber: #C87F0A;
+    --red: #B3402E;
+    --green: #3E7B4F;
+    --mono: ui-monospace, "SF Mono", "Cascadia Mono", "Consolas", monospace;
+    --sans: -apple-system, "Segoe UI", system-ui, sans-serif;
+  }
+  *{ box-sizing: border-box; }
+  html,body{ margin:0; padding:0; background:var(--paper); color:var(--ink); font-family:var(--sans); }
+  body{ min-height:100vh; display:flex; flex-direction:column; }
+
+  /* ---- Top bar ---- */
+  header.topbar{
+    display:flex; align-items:center; justify-content:space-between;
+    padding: 18px 28px; border-bottom:1px solid var(--line);
+    background:var(--paper-raised);
+  }
+  .brand{ display:flex; align-items:baseline; gap:10px; }
+  .brand h1{ font-size:19px; margin:0; font-weight:600; }
+  .actions{ display:flex; gap:10px; align-items:center; }
+
+  button{
+    font-family:var(--sans); font-size:13.5px; font-weight:500; cursor:pointer;
+    border-radius:3px; border:1px solid var(--line-strong); background:var(--paper-raised);
+    color:var(--ink); padding:8px 14px; transition: background .15s, border-color .15s, color .15s;
+  }
+  button:hover{ border-color: var(--teal); color: var(--teal-deep); }
+  button:focus-visible{ outline:2px solid var(--teal); outline-offset:1px; }
+  button.primary{ background:var(--teal); color:#fff; border-color:var(--teal); }
+  button.primary:hover{ background:var(--teal-deep); border-color:var(--teal-deep); color:#fff; }
+  button.ghost{ border-color:transparent; background:transparent; }
+  button.ghost:hover{ background:var(--paper); }
+  button:disabled{ opacity:0.5; cursor:default; }
+  button.icon-btn{
+    width:38px; height:38px; padding:0; border-radius:4px; font-size:22px; font-weight:700;
+    display:inline-flex; align-items:center; justify-content:center; line-height:1;
+  }
+  #signInBtn.status-good{ background:var(--green); border-color:var(--green); color:#fff; }
+  #signInBtn.status-good:hover{ background:#336642; border-color:#336642; }
+  #signInBtn.status-bad{ background:var(--red); border-color:var(--red); color:#fff; }
+  #signInBtn.status-bad:hover{ background:#96352a; border-color:#96352a; }
+
+  /* ---- Status strip ---- */
+  #statusStrip{ padding: 10px 28px; font-size:13px; border-bottom:1px solid var(--line); display:none; }
+  #statusStrip.show{ display:block; }
+  #statusStrip.error{ background:#FBEEEC; color:var(--red); }
+  #statusStrip.info{ background:#EEF3F1; color:var(--teal-deep); }
+
+  /* ---- Active filters bar ---- */
+  .active-filters{
+    display:none; flex-wrap:wrap; gap:8px; align-items:flex-start;
+    padding:10px 28px; border-bottom:1px solid var(--line); background:var(--paper-raised);
+  }
+  .active-filters.show{ display:flex; }
+  .active-filters h4{
+    display:flex; align-items:flex-start; gap:6px; max-width:260px;
+    margin:0; font-size:12px; font-weight:600; color:var(--teal-deep);
+    background:#EEF3F1; border:1px solid var(--line); border-radius:3px;
+    padding:4px 6px 4px 10px; line-height:1.35;
+  }
+  .active-filters .chip-label{
+    flex:1; min-width:0; white-space:normal; overflow-wrap:break-word; word-break:break-word;
+    padding-top:1px;
+  }
+  .active-filters .chip-remove{
+    flex:none; border:none; background:none; cursor:pointer; color:var(--teal-deep);
+    font-size:15px; line-height:1; padding:1px 2px; opacity:0.55; border-radius:2px;
+  }
+  .active-filters .chip-remove:hover{ opacity:1; background:rgba(255,255,255,0.6); }
+
+  /* ---- Toolbar ---- */
+  .toolbar{
+    display:flex; flex-wrap:wrap; gap:10px; align-items:center;
+    padding: 14px 28px; border-bottom:1px solid var(--line); background:var(--paper-raised);
+  }
+  .toolbar input[type="search"]{
+    font-family:var(--sans); font-size:13.5px; padding:8px 12px; border-radius:3px;
+    border:1px solid var(--line-strong); min-width:220px; background:var(--paper);
+  }
+  .toolbar select{
+    font-family:var(--sans); font-size:13.5px; padding:8px 10px; border-radius:3px;
+    border:1px solid var(--line-strong); background:var(--paper); color:var(--ink);
+  }
+  .toolbar .filter-label{ font-size:11.5px; color:var(--ink-soft); margin-right:-4px; }
+  .toolbar .spacer{ flex:1; }
+  .row-count{ font-family:var(--mono); font-size:12px; color:var(--ink-soft); }
+
+  /* ---- Table ---- */
+  .table-wrap{ flex:1; overflow:auto; }
+  table{ border-collapse:collapse; width:100%; font-size:13.5px; }
+  thead th{
+    position:sticky; top:0; background:var(--paper-raised); text-align:left;
+    padding:10px 14px; border-bottom:2px solid var(--line-strong); font-weight:600;
+    white-space:nowrap; z-index:2;
+  }
+  tbody td{ padding:9px 14px; border-bottom:1px solid var(--line); font-family:var(--mono); white-space:nowrap; }
+  tbody tr:hover td{ background:#EFF3F1; }
+  tbody tr.row-highlight td{ background:#F7E2E4; }
+  tbody tr.row-highlight:hover td{ background:#F2D5D8; }
+  tbody td.editable-cell{ font-family:var(--sans); }
+
+  select.row-editor{
+    font-family:var(--sans); font-size:13px; padding:5px 8px; border-radius:3px;
+    border:1px solid var(--line-strong); background:var(--paper-raised); color:var(--ink);
+  }
+  input.row-text-editor{
+    font-family:var(--sans); font-size:13px; padding:5px 8px; border-radius:3px;
+    border:1px solid var(--line-strong); background:var(--paper-raised); color:var(--ink);
+    width:100%; min-width:140px;
+  }
+  select.row-editor.saving, input.row-text-editor.saving{ border-color:var(--amber); color:var(--amber); }
+  select.row-editor.saved, input.row-text-editor.saved{ border-color:var(--green); }
+  select.row-editor.save-error, input.row-text-editor.save-error{ border-color:var(--red); color:var(--red); }
+
+  input.row-checkbox{ width:17px; height:17px; cursor:pointer; accent-color:var(--teal); }
+  input.row-checkbox.saving{ outline:2px solid var(--amber); outline-offset:2px; }
+  input.row-checkbox.saved{ outline:2px solid var(--green); outline-offset:2px; }
+  input.row-checkbox.save-error{ outline:2px solid var(--red); outline-offset:2px; }
+
+  .empty-state{ padding:60px 28px; text-align:center; color:var(--ink-soft); }
+  .empty-state h2{ font-size:16px; color:var(--ink); margin-bottom:8px; }
+  .empty-state p{ font-size:13.5px; max-width:480px; margin:0 auto; line-height:1.5; }
+
+  /* ---- Settings drawer ---- */
+  #overlay{
+    position:fixed; inset:0; background:rgba(20,26,28,0.35); opacity:0; pointer-events:none;
+    transition:opacity .18s; z-index:10;
+  }
+  #overlay.open{ opacity:1; pointer-events:auto; }
+
+  #drawer{
+    position:fixed; top:0; right:0; height:100%; width:420px; max-width:92vw;
+    background:var(--paper-raised); border-left:1px solid var(--line);
+    transform:translateX(100%); transition:transform .2s ease; z-index:11;
+    display:flex; flex-direction:column;
+  }
+  #drawer.open{ transform:translateX(0); }
+  .drawer-head{ padding:20px 24px; border-bottom:1px solid var(--line); display:flex; justify-content:space-between; align-items:center; }
+  .drawer-head h2{ font-size:16px; margin:0; }
+  .drawer-body{ padding:20px 24px; overflow-y:auto; flex:1; }
+  .drawer-foot{ padding:16px 24px; border-top:1px solid var(--line); display:flex; gap:10px; justify-content:flex-end; }
+
+  .field{ margin-bottom:16px; }
+  .field label{ display:block; font-size:12.5px; font-weight:600; margin-bottom:5px; color:var(--ink); }
+  .field .hint{ font-size:11.5px; color:var(--ink-soft); margin-top:4px; line-height:1.4; }
+  .field input[type="text"]{
+    width:100%; font-family:var(--mono); font-size:13px; padding:9px 10px;
+    border-radius:3px; border:1px solid var(--line-strong); background:var(--paper);
+  }
+  .field input[type="text"]:focus, .field textarea:focus{ outline:none; border-color:var(--teal); }
+
+  details.howto{ margin:18px 0; border:1px solid var(--line); border-radius:4px; padding:2px 14px; background:var(--paper); }
+  details.howto summary{ cursor:pointer; padding:10px 0; font-size:13px; font-weight:600; color:var(--teal-deep); }
+  details.howto ol{ margin:0 0 14px; padding-left:20px; font-size:12.5px; line-height:1.6; color:var(--ink-soft); }
+  details.howto code{ background:#EEF0EC; padding:1px 4px; border-radius:2px; font-size:11.5px; }
+
+  #filterDrawer{
+    position:fixed; top:0; left:0; height:100%; width:340px; max-width:90vw;
+    background:var(--paper-raised); border-right:1px solid var(--line);
+    transform:translateX(-100%); transition:transform .2s ease; z-index:11;
+    display:flex; flex-direction:column;
+  }
+  #filterDrawer.open{ transform:translateX(0); }
+  #filterDrawer .drawer-body input[type="search"]{
+    width:100%; font-family:var(--sans); font-size:13.5px; padding:9px 10px;
+    border-radius:3px; border:1px solid var(--line-strong); background:var(--paper); margin-bottom:18px;
+  }
+  .filter-field{ margin-bottom:16px; }
+  .filter-field label{ display:block; font-size:12px; font-weight:600; margin-bottom:5px; color:var(--ink); }
+  .filter-field select{
+    width:100%; font-family:var(--sans); font-size:13.5px; padding:8px 10px; border-radius:3px;
+    border:1px solid var(--line-strong); background:var(--paper); color:var(--ink);
+  }
+  .checklist{
+    border:1px solid var(--line-strong); border-radius:3px; background:var(--paper);
+    max-height:180px; overflow-y:auto;
+  }
+  .checklist-row{
+    display:flex; align-items:center; gap:8px; padding:7px 10px; font-size:13px;
+    font-weight:400; cursor:pointer; border-bottom:1px solid var(--line);
+  }
+  .checklist-row:last-child{ border-bottom:none; }
+  .checklist-row:hover{ background:#EEF3F1; }
+  .checklist-row input[type="checkbox"]{ accent-color:var(--teal); cursor:pointer; }
+  .checklist-row span{ overflow-wrap:break-word; }
+
+  /* ---- Column visibility ---- */
+  @media (max-width: 700px){
+    #drawer, #filterDrawer{ width:100%; }
+  }
+  th.col-hidden-cell, td.col-hidden-cell{ display:none; }
+
+  .drawer-section-label{
+    font-size:12.5px; font-weight:600; color:var(--ink); margin:20px 0 8px;
+    border-top:1px solid var(--line); padding-top:16px;
+  }
+  .column-toggle-row{
+    display:flex; align-items:center; gap:9px; padding:6px 2px; font-size:13.5px;
+  }
+  .column-toggle-row input[type="checkbox"]{ accent-color:var(--teal); cursor:pointer; }
+  .column-toggle-row label{ cursor:pointer; overflow:hidden; text-overflow:ellipsis; }
+
+  /* ---- Toast ---- */
+  #toast{
+    position:fixed; bottom:22px; right:24px; padding:10px 16px; border-radius:4px;
+    font-size:13px; background:var(--ink); color:#fff; opacity:0; transform:translateY(6px);
+    transition:opacity .18s, transform .18s; z-index:20;
+  }
+  #toast.show{ opacity:1; transform:translateY(0); }
+  #toast.error{ background:var(--red); }
+  #toast.success{ background:var(--green); }
+
+  ::selection{ background:#CFE0DC; }
+
+  .sheet-select{
+    font-family:var(--sans); font-size:13.5px; font-weight:500; color:var(--ink);
+    border:1px solid var(--line-strong); border-radius:3px; background:var(--paper-raised);
+    padding:8px 10px; cursor:pointer; max-width:180px;
+  }
+  .sheet-select:hover{ border-color:var(--teal); }
+  .sheet-select:disabled{ opacity:0.5; cursor:not-allowed; }
+
+  .sheet-picker{ display:flex; align-items:center; gap:8px; }
+  .sheet-picker-stacked{
+    display:flex; flex-direction:column; gap:14px; max-width:280px;
+  }
+  .sheet-picker-stacked label{
+    display:block; font-size:12.5px; font-weight:600; color:var(--ink); margin-bottom:6px;
+  }
+  .sheet-picker-stacked .sheet-select{ max-width:none; width:100%; }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <h1 id="titleText">Canvassing</h1>
+  </div>
+  <div class="actions">
+    <div id="topSheetPickerWrap" class="sheet-picker" style="display:none;">
+      <select id="regionSelectorTop" class="sheet-select"></select>
+      <select id="branchSelectorTop" class="sheet-select"></select>
+      <select id="wardSelectorTop" class="sheet-select"></select>
+    </div>
+    <button id="filtersBtn" class="ghost" title="Filters">☰ Filters</button>
+    <button id="signInBtn" class="icon-btn primary" title="Sign in with Google" aria-label="Sign in with Google">⟲</button>
+  </div>
+</header>
+
+<div id="statusStrip"></div>
+<div id="activeFilters" class="active-filters"></div>
+
+<div class="table-wrap">
+  <div class="empty-state" id="emptyState">
+    <h2>Nothing loaded yet</h2>
+    <p>Open Settings, add your Google OAuth client ID and the sheet you want to work with, then sign in. Data will appear here as a filterable, editable ledger.</p>
+    <div id="emptySheetPickerWrap" class="sheet-picker sheet-picker-stacked" style="display:none; margin-top:18px;">
+      <div>
+        <label for="regionSelectorEmpty">Region</label>
+        <select id="regionSelectorEmpty" class="sheet-select"></select>
+      </div>
+      <div>
+        <label for="branchSelectorEmpty">Branch</label>
+        <select id="branchSelectorEmpty" class="sheet-select"></select>
+      </div>
+      <div>
+        <label for="wardSelectorEmpty">Ward</label>
+        <select id="wardSelectorEmpty" class="sheet-select"></select>
+      </div>
+    </div>
+  </div>
+  <table id="dataTable" style="display:none;">
+    <thead><tr id="headerRow"></tr></thead>
+    <tbody id="bodyRows"></tbody>
+  </table>
+</div>
+
+<!-- Filters drawer -->
+<div id="filterDrawer">
+  <div class="drawer-head">
+    <h2>Filters</h2>
+    <button class="ghost" id="closeFilterDrawerBtn">✕</button>
+  </div>
+  <div class="drawer-body">
+    <input type="search" id="searchBox" placeholder="Search all columns…">
+    <div id="filterControls"></div>
+    <div class="drawer-section-label">Columns</div>
+    <div id="columnControls"></div>
+  </div>
+  <div class="drawer-foot" style="justify-content:space-between; align-items:center;">
+    <button id="refreshBtn" class="ghost">↻ Refresh</button>
+    <span class="row-count" id="rowCount"></span>
+  </div>
+</div>
+
+<!-- Settings drawer -->
+<div id="overlay"></div>
+<div id="drawer">
+  <div class="drawer-head">
+    <h2>Settings</h2>
+    <button class="ghost" id="closeDrawerBtn">✕</button>
+  </div>
+  <div class="drawer-body">
+
+    <details class="howto">
+      <summary>How do I get a Client ID and Spreadsheet ID?</summary>
+      <ol>
+        <li>In <a href="https://console.cloud.google.com/" target="_blank" rel="noopener">Google Cloud Console</a>, create (or pick) a project, then enable the <strong>Google Sheets API</strong> under "APIs &amp; Services".</li>
+        <li>Under "APIs &amp; Services → Credentials", create an <strong>OAuth client ID</strong> of type <strong>Web application</strong>.</li>
+        <li>Add this page's exact URL (the address bar right now, without anything after it) under <strong>Authorized JavaScript origins</strong>. This page must be served from a real <code>http://</code> or <code>https://</code> address — opening the file directly (<code>file://</code>) will not work.</li>
+        <li>Copy the generated <strong>Client ID</strong> (ends in <code>.apps.googleusercontent.com</code>) into the field below.</li>
+        <li>Open your Google Sheet, copy the long ID from its URL — the part between <code>/d/</code> and <code>/edit</code> — into the Spreadsheet ID field.</li>
+        <li>Make sure the Google account you sign in with has at least edit access to that sheet.</li>
+      </ol>
+    </details>
+
+    <div class="field">
+      <label for="cfgClientId">OAuth Client ID</label>
+      <input type="text" id="cfgClientId" value="1010187042757-s1jf6qthp2rgsa13valhd3j0rlm90gsp.apps.googleusercontent.com" placeholder="1234567890-abc.apps.googleusercontent.com">
+    </div>
+    <div class="field">
+      <label for="cfgSheetId">Spreadsheet ID</label>
+      <input type="text" id="cfgSheetId" value="13tETQE079ns7-1cEaqo3ghSXtpZ3Ed4fQRd800YYicY" placeholder="1AbCDeFGhijKLmNoPQRstuVWxyz">
+      <div class="hint">Used as the only sheet if the list below is left blank, or as the fallback if the list below doesn't match anything.</div>
+    </div>
+    <div class="field">
+      <label for="cfgSheetsCsvPath">Sheets CSV file (optional)</label>
+      <input type="text" id="cfgSheetsCsvPath" value="sheets.csv" placeholder="sheets.csv">
+      <div class="hint">Path to a CSV file sitting alongside this page, with header row <code>Region,Branch,Ward,SheetID</code> and one row per ward. When it loads successfully, Region/Branch/Ward dropdowns appear so people can pick their sheet step by step — no code editing needed to add new areas, just edit the CSV. If the file can't be found, the single Spreadsheet ID above is used instead.</div>
+    </div>
+    <div class="field">
+      <label for="cfgTab">Sheet / tab name</label>
+      <input type="text" id="cfgTab" value="Master Datasheet" placeholder="Sheet1">
+      <div class="hint">Exactly as it appears on the tab at the bottom of the spreadsheet.</div>
+    </div>
+    <div class="field">
+      <label for="cfgFilterCols">Filter columns <span style="font-weight:400;color:var(--ink-soft);">(optional)</span></label>
+      <input type="text" id="cfgFilterCols" value="Zone, Street, 60 Sec, August Newsletter" placeholder="Status, Region, Owner">
+      <div class="hint">Comma-separated header names to show as dropdown filters. Leave blank to auto-detect columns with a small number of repeated values.</div>
+    </div>
+    <div class="field">
+      <label for="cfgEditCol">Dropdown column</label>
+      <input type="text" id="cfgEditCol" value="60 Sec" placeholder="Status">
+      <div class="hint">The header name of the field people should update from a dropdown. Leave blank to disable this dropdown.</div>
+    </div>
+    <div class="field">
+      <label for="cfgEditOptions">Dropdown column options</label>
+      <input type="text" id="cfgEditOptions" value="Not visited, Delivered/not in, Will email, To collect, Collected, Refused, Cannot find, No access, Vacant, Holiday" placeholder="Not started, In progress, Done">
+      <div class="hint">Comma-separated allowed values for the dropdown above.</div>
+    </div>
+    <div class="field">
+      <label for="cfgCheckboxCols">Checkbox columns (exact names)</label>
+      <input type="text" id="cfgCheckboxCols" value="August Newsletter" placeholder="August Newsletter">
+      <div class="hint">Comma-separated header names to render as a tick box instead of text. Ticking writes TRUE, unticking writes FALSE back to the sheet.</div>
+    </div>
+    <div class="field">
+      <label for="cfgCheckboxKeywords">Checkbox columns (by keyword)</label>
+      <input type="text" id="cfgCheckboxKeywords" value="News" placeholder="News">
+      <div class="hint">Comma-separated words to match anywhere in a header name (not case-sensitive). Any column containing one of these — including ones added to the sheet later — becomes a tick box automatically, with no need to edit this page again.</div>
+    </div>
+    <div class="field">
+      <label for="cfgTextEditCols">Free-text editable columns</label>
+      <input type="text" id="cfgTextEditCols" value="Comments" placeholder="Comments">
+      <div class="hint">Comma-separated header names to render as an editable text box instead of plain text. Changes save when you click away or press Enter.</div>
+    </div>
+    <div class="field">
+      <label for="cfgNumberCol">Odd/Even column</label>
+      <input type="text" id="cfgNumberCol" value="Number" placeholder="Number">
+      <div class="hint">Header name of the column to filter by odd/even house number. Cells can contain just a number, just a name, or a name and number together — the number is picked out automatically and cells with no number at all are always shown regardless of this filter.</div>
+    </div>
+    <div class="field">
+      <label for="cfgMultiSelectCols">Multi-select filter columns</label>
+      <input type="text" id="cfgMultiSelectCols" value="60 Sec" placeholder="60 Sec">
+      <div class="hint">Comma-separated header names (from the Filter columns list above) that should let people tick several values at once instead of picking just one.</div>
+    </div>
+    <div class="field">
+      <label for="cfgHighlightCol">Row-highlight column</label>
+      <input type="text" id="cfgHighlightCol" value="60 Sec" placeholder="60 Sec">
+      <div class="hint">Header name to watch for the values below.</div>
+    </div>
+    <div class="field">
+      <label for="cfgHighlightValues">Row-highlight values</label>
+      <input type="text" id="cfgHighlightValues" value="Refused, Vacant, Holiday, No access, Cannot find" placeholder="Refused, Vacant">
+      <div class="hint">Comma-separated values that, when found in the row-highlight column, tint that entire row a pale dusky pink.</div>
+    </div>
+  </div>
+  <div class="drawer-foot">
+    <button class="ghost" id="cancelSettingsBtn">Cancel</button>
+    <button class="primary" id="saveSettingsBtn">Save &amp; connect</button>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<script>
+(function(){
+  "use strict";
+
+  var SCOPE = "https://www.googleapis.com/auth/spreadsheets";
+  var state = {
+    config: null,
+    tokenClient: null,
+    accessToken: null,
+    headers: [],
+    rows: [],        // array of {values:[...], sheetRowNumber: n}
+    filters: {},      // colIndex -> selected value
+    search: "",
+    parityFilter: "", // "" | "odd" | "even"
+    editColumns: {}, // colIndex -> { type: 'dropdown'|'checkbox', options: [...] }
+    hiddenCols: {},  // colIndex -> true when toggled off by the user
+    pollTimer: null,
+    nextPollAt: null,
+    sheetRows: [],   // [{region, branch, ward, sheetId}] parsed from the sheets CSV
+    selection: { region: "", branch: "", ward: "" }
+  };
+
+  // ---------- helpers ----------
+  function $(id){ return document.getElementById(id); }
+
+  function colToLetter(n){ // 0-based index -> A, B, ... AA
+    var s = "";
+    n = n + 1;
+    while(n > 0){
+      var rem = (n - 1) % 26;
+      s = String.fromCharCode(65 + rem) + s;
+      n = Math.floor((n - 1) / 26);
+    }
+    return s;
+  }
+
+  function showStatus(msg, type){
+    var el = $("statusStrip");
+    el.textContent = msg;
+    el.className = "show " + (type || "info");
+  }
+  function clearStatus(){
+    var el = $("statusStrip");
+    el.className = "";
+    el.textContent = "";
+  }
+
+  var toastTimer = null;
+  function toast(msg, type){
+    var el = $("toast");
+    el.textContent = msg;
+    el.className = "show " + (type || "");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function(){ el.className = ""; }, 2600);
+  }
+
+  function csvSplit(str){
+    return (str || "").split(",").map(function(s){ return s.trim(); }).filter(Boolean);
+  }
+
+  // ---------- config persistence via URL ----------
+  function loadConfigFromURL(){
+    var p = new URLSearchParams(window.location.search);
+    if(!p.has("clientId") || !p.has("sheetId")) return null;
+    return {
+      clientId: p.get("clientId") || "",
+      sheetId: p.get("sheetId") || "",
+      tab: p.get("tab") || "Sheet1",
+      filterCols: csvSplit(p.get("filterCols")),
+      editCol: p.get("editCol") || "",
+      editOptions: csvSplit(p.get("editOptions")),
+      checkboxCols: csvSplit(p.get("checkboxCols")),
+      checkboxKeywords: csvSplit(p.get("checkboxKeywords")),
+      textEditCols: csvSplit(p.get("textEditCols")),
+      numberCol: p.get("numberCol") || "Number",
+      multiSelectCols: csvSplit(p.get("multiSelectCols")),
+      highlightCol: p.get("highlightCol") || "",
+      highlightValues: csvSplit(p.get("highlightValues")),
+      sheetsCsvPath: p.get("sheetsCsvPath") || ""
+    };
+  }
+
+  function saveConfigToURL(cfg){
+    var p = new URLSearchParams();
+    p.set("clientId", cfg.clientId);
+    p.set("sheetId", cfg.sheetId);
+    p.set("tab", cfg.tab);
+    if(cfg.filterCols.length) p.set("filterCols", cfg.filterCols.join(","));
+    if(cfg.editCol) p.set("editCol", cfg.editCol);
+    if(cfg.editOptions.length) p.set("editOptions", cfg.editOptions.join(","));
+    if(cfg.checkboxCols.length) p.set("checkboxCols", cfg.checkboxCols.join(","));
+    if(cfg.checkboxKeywords.length) p.set("checkboxKeywords", cfg.checkboxKeywords.join(","));
+    if(cfg.textEditCols.length) p.set("textEditCols", cfg.textEditCols.join(","));
+    if(cfg.numberCol) p.set("numberCol", cfg.numberCol);
+    if(cfg.multiSelectCols.length) p.set("multiSelectCols", cfg.multiSelectCols.join(","));
+    if(cfg.highlightCol) p.set("highlightCol", cfg.highlightCol);
+    if(cfg.highlightValues.length) p.set("highlightValues", cfg.highlightValues.join(","));
+    if(cfg.sheetsCsvPath) p.set("sheetsCsvPath", cfg.sheetsCsvPath);
+    var newUrl = window.location.pathname + "?" + p.toString();
+    try{
+      history.replaceState(null, "", newUrl);
+    } catch(e){
+      // Some sandboxed preview contexts (e.g. an iframe with about:srcdoc) block
+      // rewriting the URL entirely. Settings still work for this session -
+      // they just won't be remembered in the address bar in that context.
+    }
+  }
+
+  // ---------- settings drawer ----------
+  function buildConfigFromFields(){
+    return {
+      clientId: $("cfgClientId").value.trim(),
+      sheetId: $("cfgSheetId").value.trim(),
+      tab: $("cfgTab").value.trim() || "Sheet1",
+      filterCols: csvSplit($("cfgFilterCols").value),
+      editCol: $("cfgEditCol").value.trim(),
+      editOptions: csvSplit($("cfgEditOptions").value),
+      checkboxCols: csvSplit($("cfgCheckboxCols").value),
+      checkboxKeywords: csvSplit($("cfgCheckboxKeywords").value),
+      textEditCols: csvSplit($("cfgTextEditCols").value),
+      numberCol: $("cfgNumberCol").value.trim() || "Number",
+      multiSelectCols: csvSplit($("cfgMultiSelectCols").value),
+      highlightCol: $("cfgHighlightCol").value.trim(),
+      highlightValues: csvSplit($("cfgHighlightValues").value),
+      sheetsCsvPath: $("cfgSheetsCsvPath").value.trim()
+    };
+  }
+
+  function closeAllPanels(){
+    $("overlay").className = "";
+    $("drawer").className = "";
+    $("filterDrawer").className = "";
+  }
+
+  function openDrawer(){
+    closeAllPanels();
+    if(state.config){
+      $("cfgClientId").value = state.config.clientId || "";
+      $("cfgSheetId").value = state.config.sheetId || "";
+      $("cfgTab").value = state.config.tab || "";
+      $("cfgFilterCols").value = (state.config.filterCols || []).join(", ");
+      $("cfgEditCol").value = state.config.editCol || "";
+      $("cfgEditOptions").value = (state.config.editOptions || []).join(", ");
+      $("cfgCheckboxCols").value = (state.config.checkboxCols || []).join(", ");
+      $("cfgCheckboxKeywords").value = (state.config.checkboxKeywords || []).join(", ");
+      $("cfgTextEditCols").value = (state.config.textEditCols || []).join(", ");
+      $("cfgNumberCol").value = state.config.numberCol || "";
+      $("cfgMultiSelectCols").value = (state.config.multiSelectCols || []).join(", ");
+      $("cfgHighlightCol").value = state.config.highlightCol || "";
+      $("cfgHighlightValues").value = (state.config.highlightValues || []).join(", ");
+      $("cfgSheetsCsvPath").value = state.config.sheetsCsvPath || "";
+    }
+    $("overlay").className = "open";
+    $("drawer").className = "open";
+  }
+  function closeDrawer(){ closeAllPanels(); }
+
+  function openFilterDrawer(){
+    closeAllPanels();
+    $("overlay").className = "open";
+    $("filterDrawer").className = "open";
+  }
+
+  $("closeDrawerBtn").addEventListener("click", closeDrawer);
+  $("cancelSettingsBtn").addEventListener("click", closeDrawer);
+  $("overlay").addEventListener("click", closeAllPanels);
+  $("filtersBtn").addEventListener("click", openFilterDrawer);
+  $("closeFilterDrawerBtn").addEventListener("click", closeAllPanels);
+
+  $("saveSettingsBtn").addEventListener("click", function(){
+    var cfg = buildConfigFromFields();
+    if(!cfg.clientId || !cfg.sheetId){
+      toast("Client ID and Spreadsheet ID are required.", "error");
+      return;
+    }
+    state.config = cfg;
+    saveConfigToURL(cfg);
+    closeDrawer();
+    setUpGoogleAuth();
+    toast("Settings saved.", "success");
+  });
+
+  // ---------- Google auth ----------
+  function setConnectionStatus(status){
+    var btn = $("signInBtn");
+    btn.classList.remove("status-good", "status-bad");
+    if(status === "good") btn.classList.add("status-good");
+    else if(status === "bad") btn.classList.add("status-bad");
+  }
+
+  function setUpGoogleAuth(){
+    if(!window.google || !google.accounts || !google.accounts.oauth2){
+      showStatus("Google sign-in script hasn't loaded yet. Check your connection and reload.", "error");
+      return;
+    }
+    if(!state.config || !state.config.clientId) return;
+    state.tokenClient = google.accounts.oauth2.initTokenClient({
+      client_id: state.config.clientId,
+      scope: SCOPE,
+      callback: function(resp){
+        if(resp && resp.access_token){
+          state.accessToken = resp.access_token;
+          $("signInBtn").title = "Reconnect";
+          $("signInBtn").setAttribute("aria-label", "Reconnect");
+          setConnectionStatus("good");
+          clearStatus();
+          fetchSheetData();
+        } else {
+          showStatus("Sign-in did not return an access token. Try again.", "error");
+        }
+      },
+      error_callback: function(err){
+        showStatus("Sign-in failed or was cancelled: " + (err && err.type ? err.type : "unknown error"), "error");
+      }
+    });
+    $("signInBtn").disabled = false;
+  }
+
+  $("signInBtn").addEventListener("click", function(){
+    if(!state.config){
+      openDrawer();
+      toast("Add your settings first.", "error");
+      return;
+    }
+    if(!state.tokenClient){
+      setUpGoogleAuth();
+    }
+    if(state.tokenClient){
+      state.tokenClient.requestAccessToken({ prompt: state.accessToken ? "" : "consent" });
+    }
+  });
+
+  // ---------- Sheets API ----------
+  function apiUrl(path, query){
+    var base = "https://sheets.googleapis.com/v4/spreadsheets/" + state.config.sheetId + path;
+    if(query) base += "?" + query;
+    return base;
+  }
+
+  function fetchSheetData(opts){
+    opts = opts || {};
+    if(!state.accessToken){ return; }
+    if(state.sheetRows.length && !(state.selection.region && state.selection.branch && state.selection.ward)){
+      if(!opts.silent) showStatus("Choose a Region, Branch and Ward above to load data.", "info");
+      return;
+    }
+    if(!opts.silent) showStatus("Loading sheet data…", "info");
+    var range = encodeURIComponent(state.config.tab);
+    fetch(apiUrl("/values/" + range), {
+      headers: { "Authorization": "Bearer " + state.accessToken }
+    })
+    .then(function(res){
+      if(res.status === 401){ throw { code: 401 }; }
+      if(!res.ok){ return res.json().then(function(j){ throw j; }); }
+      return res.json();
+    })
+    .then(function(data){
+      var values = data.values || [];
+      if(values.length === 0){
+        showStatus("The sheet returned no data. Check the tab name.", "error");
+        return;
+      }
+      state.headers = values[0];
+      state.rows = values.slice(1).map(function(rowValues, i){
+        return { values: rowValues, sheetRowNumber: i + 2 }; // +2: 1-index + header row
+      });
+      determineEditColumns();
+      clearStatus();
+      setConnectionStatus("good");
+      renderFilterControls();
+      renderColumnControls();
+      renderTable();
+      schedulePoll(POLL_INTERVAL_MS);
+    })
+    .catch(function(err){
+      if(err && err.code === 401){
+        showStatus("Your session expired. Click the reconnect icon to sign in again.", "error");
+        state.accessToken = null;
+        setConnectionStatus("bad");
+        cancelPoll();
+        return;
+      }
+      var msg = (err && err.error && err.error.message) ? err.error.message : "Could not load the sheet.";
+      showStatus("Error: " + msg, "error");
+      schedulePoll(POLL_INTERVAL_MS); // transient failure - keep trying on schedule
+    });
+  }
+
+  // ---------- background polling ----------
+  var POLL_INTERVAL_MS = 60000;
+  var PUSH_WINDOW_MS = 10000;
+  var PUSH_AMOUNT_MS = 10000;
+
+  function schedulePoll(delayMs){
+    if(state.pollTimer) clearTimeout(state.pollTimer);
+    state.nextPollAt = Date.now() + delayMs;
+    state.pollTimer = setTimeout(function(){
+      fetchSheetData({ silent: true });
+    }, delayMs);
+  }
+
+  function cancelPoll(){
+    if(state.pollTimer) clearTimeout(state.pollTimer);
+    state.pollTimer = null;
+    state.nextPollAt = null;
+  }
+
+  function notePendingEditForPoll(){
+    if(!state.nextPollAt) return;
+    var remaining = state.nextPollAt - Date.now();
+    if(remaining <= PUSH_WINDOW_MS){
+      schedulePoll(Math.max(remaining, 0) + PUSH_AMOUNT_MS);
+    }
+  }
+
+  function findColIndex(name){
+    return state.headers.findIndex(function(h){
+      return (h || "").trim().toLowerCase() === name.trim().toLowerCase();
+    });
+  }
+
+  function determineEditColumns(){
+    state.editColumns = {};
+    if(state.config.editCol){
+      var dIdx = findColIndex(state.config.editCol);
+      if(dIdx !== -1 && state.config.editOptions.length){
+        state.editColumns[dIdx] = { type: "dropdown", options: state.config.editOptions };
+      }
+    }
+    (state.config.checkboxCols || []).forEach(function(name){
+      var cIdx = findColIndex(name);
+      if(cIdx !== -1){
+        state.editColumns[cIdx] = { type: "checkbox" };
+      }
+    });
+    (state.config.textEditCols || []).forEach(function(name){
+      var tIdx = findColIndex(name);
+      if(tIdx !== -1 && !state.editColumns[tIdx]){
+        state.editColumns[tIdx] = { type: "text" };
+      }
+    });
+    var keywords = (state.config.checkboxKeywords || []).map(function(k){ return k.toLowerCase(); }).filter(Boolean);
+    if(keywords.length){
+      state.headers.forEach(function(h, idx){
+        if(state.editColumns[idx]) return; // don't override an explicit dropdown/checkbox assignment
+        var hLower = (h || "").toLowerCase();
+        var matches = keywords.some(function(k){ return hLower.indexOf(k) !== -1; });
+        if(matches){
+          state.editColumns[idx] = { type: "checkbox" };
+        }
+      });
+    }
+  }
+
+  function isChecked(rawValue){
+    var v = (rawValue || "").toString().trim().toLowerCase();
+    return v === "true" || v === "yes" || v === "1" || v === "x" || v === "✓";
+  }
+
+  // Pulls every contiguous run of digits out of a cell. A cell can contain
+  // just a number ("136"), just a name ("The Willows"), a name and number
+  // ("136 The Willows"), or two combined house numbers ("6/7", "52/53").
+  function extractNumbers(rawValue){
+    var matches = (rawValue || "").toString().match(/\d+/g);
+    if(!matches) return [];
+    return matches.map(function(s){ return parseInt(s, 10); });
+  }
+
+  // Returns "odd", "even", or null. Null covers both "no number at all" (a name-only
+  // cell) and "combined dwelling with mixed parity" (e.g. 6/7, 52/53) - both cases
+  // should always be shown regardless of which odd/even filter is selected.
+  function getParity(rawValue){
+    var nums = extractNumbers(rawValue);
+    if(nums.length === 0) return null;
+    var parities = nums.map(function(n){ return (n % 2 === 0) ? "even" : "odd"; });
+    var allSame = parities.every(function(p){ return p === parities[0]; });
+    return allSame ? parities[0] : null;
+  }
+
+  function setColumnVisible(colIndex, visible){
+    if(visible) delete state.hiddenCols[colIndex];
+    else state.hiddenCols[colIndex] = true;
+    renderTable();
+  }
+
+  function renderColumnControls(){
+    var container = $("columnControls");
+    container.innerHTML = "";
+    state.headers.forEach(function(h, colIndex){
+      var row = document.createElement("div");
+      row.className = "column-toggle-row";
+
+      var cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.id = "colToggle" + colIndex;
+      cb.checked = !state.hiddenCols[colIndex];
+      cb.addEventListener("change", function(){
+        setColumnVisible(colIndex, cb.checked);
+      });
+
+      var label = document.createElement("label");
+      label.setAttribute("for", cb.id);
+      label.textContent = h;
+
+      row.appendChild(cb);
+      row.appendChild(label);
+      container.appendChild(row);
+    });
+  }
+
+  function updateCell(rowObj, colIndex, newValue, fieldEl){
+    notePendingEditForPoll();
+    var a1 = state.config.tab + "!" + colToLetter(colIndex) + rowObj.sheetRowNumber;
+    fieldEl.classList.remove("saved", "save-error");
+    fieldEl.classList.add("saving");
+    fetch(apiUrl("/values/" + encodeURIComponent(a1), "valueInputOption=USER_ENTERED"), {
+      method: "PUT",
+      headers: {
+        "Authorization": "Bearer " + state.accessToken,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ range: a1, majorDimension: "ROWS", values: [[newValue]] })
+    })
+    .then(function(res){
+      if(!res.ok){ return res.json().then(function(j){ throw j; }); }
+      return res.json();
+    })
+    .then(function(){
+      rowObj.values[colIndex] = newValue;
+      fieldEl.classList.remove("saving");
+      fieldEl.classList.add("saved");
+      toast("Saved.", "success");
+      setTimeout(function(){ fieldEl.classList.remove("saved"); }, 1200);
+    })
+    .catch(function(err){
+      fieldEl.classList.remove("saving");
+      fieldEl.classList.add("save-error");
+      var msg = (err && err.error && err.error.message) ? err.error.message : "Could not save that change.";
+      toast(msg, "error");
+    });
+  }
+
+  // ---------- filters ----------
+  function autoDetectFilterColumns(){
+    if(state.config.filterCols && state.config.filterCols.length){
+      return state.config.filterCols.map(function(name){
+        return state.headers.findIndex(function(h){
+          return (h || "").trim().toLowerCase() === name.trim().toLowerCase();
+        });
+      }).filter(function(i){ return i !== -1; });
+    }
+    var candidates = [];
+    state.headers.forEach(function(h, idx){
+      if(state.editColumns[idx]) return;
+      var uniq = {};
+      state.rows.forEach(function(r){ uniq[r.values[idx] || ""] = true; });
+      var count = Object.keys(uniq).length;
+      if(count > 1 && count <= 15){ candidates.push({ idx: idx, count: count }); }
+    });
+    candidates.sort(function(a,b){ return a.count - b.count; });
+    return candidates.slice(0, 4).map(function(c){ return c.idx; });
+  }
+
+  function isMultiSelectCol(idx){
+    return (state.config.multiSelectCols || []).some(function(name){
+      return (state.headers[idx] || "").trim().toLowerCase() === name.trim().toLowerCase();
+    });
+  }
+
+  function buildParityField(numIdx){
+    var wrap = document.createElement("div");
+    wrap.className = "filter-field";
+    var label = document.createElement("label");
+    label.textContent = state.headers[numIdx] + " (odd/even)";
+    wrap.appendChild(label);
+
+    var sel = document.createElement("select");
+    [["", "All"], ["odd", "Odd"], ["even", "Even"]].forEach(function(pair){
+      var opt = document.createElement("option");
+      opt.value = pair[0]; opt.textContent = pair[1];
+      if(state.parityFilter === pair[0]) opt.selected = true;
+      sel.appendChild(opt);
+    });
+    sel.addEventListener("change", function(){
+      state.parityFilter = sel.value;
+      renderTable();
+    });
+    wrap.appendChild(sel);
+    return wrap;
+  }
+
+  function buildFilterField(idx){
+    var uniqSet = {};
+    state.rows.forEach(function(r){ uniqSet[r.values[idx] || "(blank)"] = true; });
+    var values = Object.keys(uniqSet).sort();
+
+    var wrap = document.createElement("div");
+    wrap.className = "filter-field";
+    var label = document.createElement("label");
+    label.textContent = state.headers[idx];
+    wrap.appendChild(label);
+
+    if(isMultiSelectCol(idx)){
+      // Multi-select: several values can be ticked at once.
+      var selectedSet = Array.isArray(state.filters[idx]) ? state.filters[idx] : [];
+      selectedSet = selectedSet.filter(function(v){ return values.indexOf(v) !== -1; });
+      if(selectedSet.length) state.filters[idx] = selectedSet;
+      else delete state.filters[idx];
+
+      var list = document.createElement("div");
+      list.className = "checklist";
+      values.forEach(function(v){
+        var row = document.createElement("label");
+        row.className = "checklist-row";
+        var cb = document.createElement("input");
+        cb.type = "checkbox";
+        cb.checked = selectedSet.indexOf(v) !== -1;
+        cb.addEventListener("change", function(){
+          var current = Array.isArray(state.filters[idx]) ? state.filters[idx].slice() : [];
+          if(cb.checked){
+            if(current.indexOf(v) === -1) current.push(v);
+          } else {
+            current = current.filter(function(x){ return x !== v; });
+          }
+          if(current.length) state.filters[idx] = current;
+          else delete state.filters[idx];
+          renderTable();
+        });
+        var span = document.createElement("span");
+        span.textContent = v;
+        row.appendChild(cb);
+        row.appendChild(span);
+        list.appendChild(row);
+      });
+      wrap.appendChild(list);
+    } else {
+      // Single-select dropdown (existing behaviour).
+      var currentSelection = state.filters[idx];
+      if(currentSelection !== undefined && values.indexOf(currentSelection) === -1){
+        delete state.filters[idx];
+        currentSelection = undefined;
+      }
+
+      var sel = document.createElement("select");
+      var optAll = document.createElement("option");
+      optAll.value = ""; optAll.textContent = "All";
+      sel.appendChild(optAll);
+      values.forEach(function(v){
+        var opt = document.createElement("option");
+        opt.value = v; opt.textContent = v;
+        if(currentSelection === v) opt.selected = true;
+        sel.appendChild(opt);
+      });
+      sel.addEventListener("change", function(){
+        if(sel.value === "") delete state.filters[idx];
+        else state.filters[idx] = sel.value;
+        renderTable();
+      });
+      wrap.appendChild(sel);
+    }
+
+    return wrap;
+  }
+
+  function renderFilterControls(){
+    var container = $("filterControls");
+    container.innerHTML = "";
+    var cols = autoDetectFilterColumns();
+    var numIdx = findColIndex(state.config.numberCol || "Number");
+
+    // Drop any active filter whose column is no longer part of the detected set.
+    Object.keys(state.filters).forEach(function(idxStr){
+      if(cols.indexOf(Number(idxStr)) === -1) delete state.filters[idxStr];
+    });
+
+    // Build every control (including Odd/Even) then place them in the same
+    // left-to-right order as the actual column headers in the sheet.
+    var entries = cols
+      .filter(function(idx){ return idx !== numIdx; })
+      .map(function(idx){ return { idx: idx, el: buildFilterField(idx) }; });
+
+    if(numIdx !== -1){
+      entries.push({ idx: numIdx, el: buildParityField(numIdx) });
+    }
+
+    entries.sort(function(a, b){ return a.idx - b.idx; });
+    entries.forEach(function(entry){ container.appendChild(entry.el); });
+  }
+
+  $("searchBox").addEventListener("input", function(){
+    state.search = this.value.trim().toLowerCase();
+    renderTable();
+  });
+  $("refreshBtn").addEventListener("click", function(){ fetchSheetData(); });
+
+  function rowMatches(rowObj){
+    for(var idx in state.filters){
+      var wanted = state.filters[idx];
+      var actual = rowObj.values[idx] || "(blank)";
+      if(Array.isArray(wanted)){
+        if(wanted.length && wanted.indexOf(actual) === -1) return false;
+      } else {
+        if(actual !== wanted) return false;
+      }
+    }
+    if(state.parityFilter){
+      var numIdxForMatch = findColIndex(state.config.numberCol || "Number");
+      if(numIdxForMatch !== -1){
+        var parity = getParity(rowObj.values[numIdxForMatch]);
+        // Cells with no number at all (a name only) always pass through, regardless of the filter.
+        if(parity !== null && parity !== state.parityFilter) return false;
+      }
+    }
+    if(state.search){
+      var hit = rowObj.values.some(function(v){
+        return (v || "").toLowerCase().indexOf(state.search) !== -1;
+      });
+      if(!hit) return false;
+    }
+    return true;
+  }
+
+  // ---------- table rendering ----------
+  function makeFilterChip(labelText, onRemove){
+    var h4 = document.createElement("h4");
+    var label = document.createElement("span");
+    label.className = "chip-label";
+    label.textContent = labelText;
+    h4.appendChild(label);
+
+    var remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "chip-remove";
+    remove.textContent = "×";
+    remove.title = "Remove this filter";
+    remove.setAttribute("aria-label", "Remove filter: " + labelText);
+    remove.addEventListener("click", onRemove);
+    h4.appendChild(remove);
+    return h4;
+  }
+
+  function renderActiveFilters(){
+    var container = $("activeFilters");
+    container.innerHTML = "";
+    var keys = Object.keys(state.filters);
+    var hasParity = !!state.parityFilter;
+
+    if(keys.length === 0 && !hasParity){
+      container.classList.remove("show");
+      return;
+    }
+    container.classList.add("show");
+
+    if(hasParity){
+      var numIdx = findColIndex(state.config.numberCol || "Number");
+      var colName = numIdx !== -1 ? state.headers[numIdx] : (state.config.numberCol || "Number");
+      var parityLabel = state.parityFilter === "odd" ? "Odd" : "Even";
+      container.appendChild(makeFilterChip(colName + ": " + parityLabel, function(){
+        state.parityFilter = "";
+        renderFilterControls();
+        renderTable();
+      }));
+    }
+
+    keys.forEach(function(idxStr){
+      var idx = Number(idxStr);
+      var wanted = state.filters[idxStr];
+      if(Array.isArray(wanted)){
+        wanted.forEach(function(v){
+          container.appendChild(makeFilterChip(state.headers[idx] + ": " + v, function(){
+            var current = (Array.isArray(state.filters[idxStr]) ? state.filters[idxStr] : []).filter(function(x){ return x !== v; });
+            if(current.length) state.filters[idxStr] = current;
+            else delete state.filters[idxStr];
+            renderFilterControls();
+            renderTable();
+          }));
+        });
+      } else {
+        container.appendChild(makeFilterChip(state.headers[idx] + ": " + wanted, function(){
+          delete state.filters[idxStr];
+          renderFilterControls();
+          renderTable();
+        }));
+      }
+    });
+  }
+
+  function renderTable(){
+    renderActiveFilters();
+    var headerRow = $("headerRow");
+    headerRow.innerHTML = "";
+    state.headers.forEach(function(h, colIndex){
+      var th = document.createElement("th");
+      th.textContent = h;
+      if(state.hiddenCols[colIndex]) th.classList.add("col-hidden-cell");
+      headerRow.appendChild(th);
+    });
+
+    var body = $("bodyRows");
+    body.innerHTML = "";
+    var visible = state.rows.filter(rowMatches);
+
+    var highlightIdx = state.config.highlightCol ? findColIndex(state.config.highlightCol) : -1;
+    var highlightValuesLower = (state.config.highlightValues || []).map(function(v){ return v.trim().toLowerCase(); });
+
+    visible.forEach(function(rowObj){
+      var tr = document.createElement("tr");
+      if(highlightIdx !== -1 && highlightValuesLower.length){
+        var cellVal = (rowObj.values[highlightIdx] || "").trim().toLowerCase();
+        if(highlightValuesLower.indexOf(cellVal) !== -1){
+          tr.classList.add("row-highlight");
+        }
+      }
+      state.headers.forEach(function(h, colIndex){
+        var td = document.createElement("td");
+        if(state.hiddenCols[colIndex]) td.classList.add("col-hidden-cell");
+        var editCfg = state.editColumns[colIndex];
+        if(editCfg && editCfg.type === "dropdown"){
+          td.classList.add("editable-cell");
+          var sel = document.createElement("select");
+          sel.className = "row-editor";
+          var current = rowObj.values[colIndex] || "";
+          var opts = editCfg.options.slice();
+          if(current && opts.indexOf(current) === -1) opts.unshift(current);
+          opts.forEach(function(optVal){
+            var opt = document.createElement("option");
+            opt.value = optVal; opt.textContent = optVal;
+            if(optVal === current) opt.selected = true;
+            sel.appendChild(opt);
+          });
+          sel.addEventListener("change", function(){
+            updateCell(rowObj, colIndex, sel.value, sel);
+          });
+          td.appendChild(sel);
+        } else if(editCfg && editCfg.type === "checkbox"){
+          td.classList.add("editable-cell");
+          var cb = document.createElement("input");
+          cb.type = "checkbox";
+          cb.className = "row-checkbox";
+          cb.checked = isChecked(rowObj.values[colIndex]);
+          cb.addEventListener("change", function(){
+            updateCell(rowObj, colIndex, cb.checked ? "TRUE" : "FALSE", cb);
+          });
+          td.appendChild(cb);
+        } else if(editCfg && editCfg.type === "text"){
+          td.classList.add("editable-cell");
+          var txt = document.createElement("input");
+          txt.type = "text";
+          txt.className = "row-text-editor";
+          txt.value = rowObj.values[colIndex] || "";
+          var commitText = function(){
+            if(txt.value === (rowObj.values[colIndex] || "")) return; // no change - skip the write
+            updateCell(rowObj, colIndex, txt.value, txt);
+          };
+          txt.addEventListener("blur", commitText);
+          txt.addEventListener("keydown", function(e){
+            if(e.key === "Enter"){ e.preventDefault(); txt.blur(); }
+          });
+          td.appendChild(txt);
+        } else {
+          td.textContent = rowObj.values[colIndex] || "";
+        }
+        tr.appendChild(td);
+      });
+      body.appendChild(tr);
+    });
+
+    $("dataTable").style.display = state.rows.length ? "table" : "none";
+    $("emptyState").style.display = state.rows.length ? "none" : "block";
+    $("rowCount").textContent = visible.length + " of " + state.rows.length + " rows";
+  }
+
+  // ---------- multi-sheet support (Region / Branch / Ward, from an external CSV) ----------
+  function parseCsvLine(line){
+    var result = [];
+    var cur = "";
+    var inQuotes = false;
+    for(var i = 0; i < line.length; i++){
+      var ch = line[i];
+      if(inQuotes){
+        if(ch === '"'){
+          if(line[i + 1] === '"'){ cur += '"'; i++; }
+          else { inQuotes = false; }
+        } else {
+          cur += ch;
+        }
+      } else if(ch === '"'){
+        inQuotes = true;
+      } else if(ch === ','){
+        result.push(cur); cur = "";
+      } else {
+        cur += ch;
+      }
+    }
+    result.push(cur);
+    return result;
+  }
+
+  function parseSheetsCsv(text){
+    var lines = text.split(/\r\n|\n|\r/).filter(function(l){ return l.trim() !== ""; });
+    if(!lines.length) return [];
+    var header = parseCsvLine(lines[0]).map(function(h){ return h.trim().toLowerCase(); });
+    var regionIdx = header.indexOf("region");
+    var branchIdx = header.indexOf("branch");
+    var wardIdx = header.indexOf("ward");
+    var sheetIdIdx = header.indexOf("sheetid");
+    if(regionIdx === -1 || branchIdx === -1 || wardIdx === -1 || sheetIdIdx === -1) return [];
+
+    var rows = [];
+    for(var i = 1; i < lines.length; i++){
+      var cols = parseCsvLine(lines[i]);
+      var region = (cols[regionIdx] || "").trim();
+      var branch = (cols[branchIdx] || "").trim();
+      var ward = (cols[wardIdx] || "").trim();
+      var sheetId = (cols[sheetIdIdx] || "").trim();
+      if(region && branch && ward && sheetId){
+        rows.push({ region: region, branch: branch, ward: ward, sheetId: sheetId });
+      }
+    }
+    return rows;
+  }
+
+  function uniqueSorted(arr){
+    var seen = {};
+    var out = [];
+    arr.forEach(function(v){
+      if(v && !seen[v]){ seen[v] = true; out.push(v); }
+    });
+    out.sort();
+    return out;
+  }
+
+  function getSelectPair(level){
+    return [$(level + "SelectorTop"), $(level + "SelectorEmpty")];
+  }
+
+  function populateLevelOptions(level, options, placeholderText, selectedValue){
+    getSelectPair(level).forEach(function(sel){
+      sel.innerHTML = "";
+      var ph = document.createElement("option");
+      ph.value = ""; ph.textContent = placeholderText;
+      sel.appendChild(ph);
+      options.forEach(function(v){
+        var opt = document.createElement("option");
+        opt.value = v; opt.textContent = v;
+        if(v === selectedValue) opt.selected = true;
+        sel.appendChild(opt);
+      });
+      sel.disabled = options.length === 0;
+    });
+  }
+
+  function refreshRegionLevel(){
+    var regions = uniqueSorted(state.sheetRows.map(function(r){ return r.region; }));
+    populateLevelOptions("region", regions, "Select this", state.selection.region);
+  }
+  function refreshBranchLevel(){
+    var branches = state.selection.region
+      ? uniqueSorted(state.sheetRows.filter(function(r){ return r.region === state.selection.region; }).map(function(r){ return r.branch; }))
+      : [];
+    populateLevelOptions("branch", branches, "Then this", state.selection.branch);
+  }
+  function refreshWardLevel(){
+    var wards = (state.selection.region && state.selection.branch)
+      ? uniqueSorted(state.sheetRows.filter(function(r){ return r.region === state.selection.region && r.branch === state.selection.branch; }).map(function(r){ return r.ward; }))
+      : [];
+    populateLevelOptions("ward", wards, "Finally this", state.selection.ward);
+  }
+  function refreshAllLevels(){
+    refreshRegionLevel();
+    refreshBranchLevel();
+    refreshWardLevel();
+  }
+
+  function tryActivateSelection(){
+    if(!(state.selection.region && state.selection.branch && state.selection.ward)) return;
+    var match = state.sheetRows.find(function(r){
+      return r.region === state.selection.region && r.branch === state.selection.branch && r.ward === state.selection.ward;
+    });
+    if(!match) return;
+    state.config.sheetId = match.sheetId;
+    saveConfigToURL(state.config);
+    cancelPoll();
+    fetchSheetData();
+  }
+
+  function onLevelChange(level, value){
+    state.selection[level] = value;
+    if(level === "region"){ state.selection.branch = ""; state.selection.ward = ""; }
+    if(level === "branch"){ state.selection.ward = ""; }
+    refreshAllLevels();
+    if(level === "ward") tryActivateSelection();
+  }
+
+  ["region", "branch", "ward"].forEach(function(level){
+    getSelectPair(level).forEach(function(sel){
+      sel.addEventListener("change", function(){ onLevelChange(level, this.value); });
+    });
+  });
+
+  function showSheetPickers(show){
+    $("topSheetPickerWrap").style.display = show ? "" : "none";
+    $("emptySheetPickerWrap").style.display = show ? "" : "none";
+  }
+
+  function loadSheetsCsv(cfg, restoreFromSheetId){
+    var path = cfg.sheetsCsvPath || "sheets.csv";
+    fetch(path)
+      .then(function(res){
+        if(!res.ok) throw new Error("CSV not found");
+        return res.text();
+      })
+      .then(function(text){
+        var rows = parseSheetsCsv(text);
+        if(!rows.length) return; // no usable CSV - silently stay in single-sheet mode
+        state.sheetRows = rows;
+
+        if(restoreFromSheetId){
+          var match = rows.find(function(r){ return r.sheetId === cfg.sheetId; });
+          if(match){
+            state.selection = { region: match.region, branch: match.branch, ward: match.ward };
+          }
+        }
+
+        refreshAllLevels();
+        showSheetPickers(true);
+      })
+      .catch(function(){
+        // No CSV file yet, or it failed to load - fall back to the single Spreadsheet ID silently.
+      });
+  }
+
+  // ---------- boot ----------
+  function boot(){
+    var cfgFromUrl = loadConfigFromURL();
+    var cfg = cfgFromUrl;
+    if(!cfg){
+      var fromFields = buildConfigFromFields();
+      if(fromFields.clientId && fromFields.sheetId) cfg = fromFields;
+    }
+    if(cfg){
+      state.config = cfg;
+      loadSheetsCsv(cfg, !!cfgFromUrl);
+      saveConfigToURL(cfg);
+      window.addEventListener("load", function(){
+        // give the GIS script a moment to attach to window.google
+        var tries = 0;
+        var iv = setInterval(function(){
+          tries++;
+          if(window.google && google.accounts && google.accounts.oauth2){
+            clearInterval(iv);
+            setUpGoogleAuth();
+          } else if(tries > 40){
+            clearInterval(iv);
+            showStatus("Could not load Google's sign-in library. Check your network and reload.", "error");
+          }
+        }, 100);
+      });
+    }
+  }
+  boot();
+
+})();
+</script>
+</body>
+</html>
