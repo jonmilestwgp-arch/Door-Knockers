@@ -252,11 +252,6 @@
     <h1 id="titleText">Canvassing</h1>
   </div>
   <div class="actions">
-    <div id="topSheetPickerWrap" class="sheet-picker" style="display:none;">
-      <select id="regionSelectorTop" class="sheet-select"></select>
-      <select id="branchSelectorTop" class="sheet-select"></select>
-      <select id="wardSelectorTop" class="sheet-select"></select>
-    </div>
     <button id="filtersBtn" class="ghost" title="Filters">☰ Filters</button>
     <button id="signInBtn" class="icon-btn primary" title="Sign in with Google" aria-label="Sign in with Google">⟲</button>
   </div>
@@ -1241,7 +1236,7 @@
   }
 
   function getSelectPair(level){
-    return [$(level + "SelectorTop"), $(level + "SelectorEmpty")];
+    return [$(level + "SelectorEmpty")];
   }
 
   function populateLevelOptions(level, options, placeholderText, selectedValue){
@@ -1309,7 +1304,6 @@
   });
 
   function showSheetPickers(show){
-    $("topSheetPickerWrap").style.display = show ? "" : "none";
     $("emptySheetPickerWrap").style.display = show ? "" : "none";
   }
 
