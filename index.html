@@ -238,11 +238,13 @@
   .sheet-picker{ display:flex; align-items:center; gap:8px; }
   .sheet-picker-stacked{
     display:flex; flex-direction:column; gap:14px; max-width:280px;
+    margin-left:auto; margin-right:auto; text-align:center;
   }
   .sheet-picker-stacked label{
     display:block; font-size:12.5px; font-weight:600; color:var(--ink); margin-bottom:6px;
+    text-align:center;
   }
-  .sheet-picker-stacked .sheet-select{ max-width:none; width:100%; }
+  .sheet-picker-stacked .sheet-select{ max-width:none; width:100%; text-align:center; }
 </style>
 </head>
 <body>
@@ -464,50 +466,28 @@
   }
 
   // ---------- config persistence via URL ----------
-  function loadConfigFromURL(){
-    var p = new URLSearchParams(window.location.search);
-    if(!p.has("clientId") || !p.has("sheetId")) return null;
-    return {
-      clientId: p.get("clientId") || "",
-      sheetId: p.get("sheetId") || "",
-      tab: p.get("tab") || "Sheet1",
-      filterCols: csvSplit(p.get("filterCols")),
-      editCol: p.get("editCol") || "",
-      editOptions: csvSplit(p.get("editOptions")),
-      checkboxCols: csvSplit(p.get("checkboxCols")),
-      checkboxKeywords: csvSplit(p.get("checkboxKeywords")),
-      textEditCols: csvSplit(p.get("textEditCols")),
-      numberCol: p.get("numberCol") || "Number",
-      multiSelectCols: csvSplit(p.get("multiSelectCols")),
-      highlightCol: p.get("highlightCol") || "",
-      highlightValues: csvSplit(p.get("highlightValues")),
-      sheetsCsvPath: p.get("sheetsCsvPath") || ""
-    };
+  // Config always comes straight from the baked-in defaults below (Client ID, Spreadsheet ID,
+  // etc.) - nothing is read from or written to the page URL, so none of it ever shows up
+  // in the address bar. The only thing worth remembering between visits is which
+  // Region/Branch/Ward was last picked, and that's stored in the browser's own
+  // localStorage instead - invisible to the user, no server involved.
+  var SELECTION_STORAGE_KEY = "canvassing_sheet_selection";
+
+  function saveSelectionLocally(sel){
+    try{
+      localStorage.setItem(SELECTION_STORAGE_KEY, JSON.stringify(sel));
+    } catch(e){
+      // Storage can be unavailable (private browsing, disabled storage, etc.) - not fatal,
+      // it just means the selection won't be remembered next visit.
+    }
   }
 
-  function saveConfigToURL(cfg){
-    var p = new URLSearchParams();
-    p.set("clientId", cfg.clientId);
-    p.set("sheetId", cfg.sheetId);
-    p.set("tab", cfg.tab);
-    if(cfg.filterCols.length) p.set("filterCols", cfg.filterCols.join(","));
-    if(cfg.editCol) p.set("editCol", cfg.editCol);
-    if(cfg.editOptions.length) p.set("editOptions", cfg.editOptions.join(","));
-    if(cfg.checkboxCols.length) p.set("checkboxCols", cfg.checkboxCols.join(","));
-    if(cfg.checkboxKeywords.length) p.set("checkboxKeywords", cfg.checkboxKeywords.join(","));
-    if(cfg.textEditCols.length) p.set("textEditCols", cfg.textEditCols.join(","));
-    if(cfg.numberCol) p.set("numberCol", cfg.numberCol);
-    if(cfg.multiSelectCols.length) p.set("multiSelectCols", cfg.multiSelectCols.join(","));
-    if(cfg.highlightCol) p.set("highlightCol", cfg.highlightCol);
-    if(cfg.highlightValues.length) p.set("highlightValues", cfg.highlightValues.join(","));
-    if(cfg.sheetsCsvPath) p.set("sheetsCsvPath", cfg.sheetsCsvPath);
-    var newUrl = window.location.pathname + "?" + p.toString();
+  function loadSelectionLocally(){
     try{
-      history.replaceState(null, "", newUrl);
+      var raw = localStorage.getItem(SELECTION_STORAGE_KEY);
+      return raw ? JSON.parse(raw) : null;
     } catch(e){
-      // Some sandboxed preview contexts (e.g. an iframe with about:srcdoc) block
-      // rewriting the URL entirely. Settings still work for this session -
-      // they just won't be remembered in the address bar in that context.
+      return null;
     }
   }
 
@@ -579,7 +559,6 @@
       return;
     }
     state.config = cfg;
-    saveConfigToURL(cfg);
     closeDrawer();
     setUpGoogleAuth();
     toast("Settings saved.", "success");
@@ -1284,7 +1263,7 @@
     });
     if(!match) return;
     state.config.sheetId = match.sheetId;
-    saveConfigToURL(state.config);
+    saveSelectionLocally(state.selection);
     cancelPoll();
     fetchSheetData();
   }
@@ -1307,7 +1286,7 @@
     $("emptySheetPickerWrap").style.display = show ? "" : "none";
   }
 
-  function loadSheetsCsv(cfg, restoreFromSheetId){
+  function loadSheetsCsv(cfg){
     var path = cfg.sheetsCsvPath || "sheets.csv";
     fetch(path)
       .then(function(res){
@@ -1319,10 +1298,14 @@
         if(!rows.length) return; // no usable CSV - silently stay in single-sheet mode
         state.sheetRows = rows;
 
-        if(restoreFromSheetId){
-          var match = rows.find(function(r){ return r.sheetId === cfg.sheetId; });
+        var previous = loadSelectionLocally();
+        if(previous){
+          var match = rows.find(function(r){
+            return r.region === previous.region && r.branch === previous.branch && r.ward === previous.ward;
+          });
           if(match){
             state.selection = { region: match.region, branch: match.branch, ward: match.ward };
+            state.config.sheetId = match.sheetId;
           }
         }
 
@@ -1336,31 +1319,25 @@
 
   // ---------- boot ----------
   function boot(){
-    var cfgFromUrl = loadConfigFromURL();
-    var cfg = cfgFromUrl;
-    if(!cfg){
-      var fromFields = buildConfigFromFields();
-      if(fromFields.clientId && fromFields.sheetId) cfg = fromFields;
-    }
-    if(cfg){
-      state.config = cfg;
-      loadSheetsCsv(cfg, !!cfgFromUrl);
-      saveConfigToURL(cfg);
-      window.addEventListener("load", function(){
-        // give the GIS script a moment to attach to window.google
-        var tries = 0;
-        var iv = setInterval(function(){
-          tries++;
-          if(window.google && google.accounts && google.accounts.oauth2){
-            clearInterval(iv);
-            setUpGoogleAuth();
-          } else if(tries > 40){
-            clearInterval(iv);
-            showStatus("Could not load Google's sign-in library. Check your network and reload.", "error");
-          }
-        }, 100);
-      });
-    }
+    var cfg = buildConfigFromFields();
+    if(!cfg.clientId || !cfg.sheetId) return;
+
+    state.config = cfg;
+    loadSheetsCsv(cfg);
+    window.addEventListener("load", function(){
+      // give the GIS script a moment to attach to window.google
+      var tries = 0;
+      var iv = setInterval(function(){
+        tries++;
+        if(window.google && google.accounts && google.accounts.oauth2){
+          clearInterval(iv);
+          setUpGoogleAuth();
+        } else if(tries > 40){
+          clearInterval(iv);
+          showStatus("Could not load Google's sign-in library. Check your network and reload.", "error");
+        }
+      }, 100);
+    });
   }
   boot();
 
