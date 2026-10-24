@@ -198,6 +198,9 @@
   .checklist-row:hover{ background:#EEF3F1; }
   .checklist-row input[type="checkbox"]{ accent-color:var(--teal); cursor:pointer; }
   .checklist-row span{ overflow-wrap:break-word; }
+  .checklist-2col{ display:grid; grid-template-columns:1fr 1fr; max-height:none; }
+  .checklist-2col .checklist-row{ border-bottom:none; padding:7px 8px; align-items:flex-start; }
+  .checklist-2col .checklist-row input[type="checkbox"]{ margin-top:2px; flex:none; }
 
   /* ---- Column visibility ---- */
   @media (max-width: 700px){
@@ -382,8 +385,18 @@
     </div>
     <div class="field">
       <label for="cfgMultiSelectCols">Multi-select filter columns</label>
-      <input type="text" id="cfgMultiSelectCols" value="60 Sec" placeholder="60 Sec">
+      <input type="text" id="cfgMultiSelectCols" value="60 Sec, Street" placeholder="60 Sec">
       <div class="hint">Comma-separated header names (from the Filter columns list above) that should let people tick several values at once instead of picking just one.</div>
+    </div>
+    <div class="field">
+      <label for="cfgTwoColCols">Two-column checklist filters</label>
+      <input type="text" id="cfgTwoColCols" value="60 Sec" placeholder="60 Sec">
+      <div class="hint">Comma-separated header names (from the multi-select list above) whose tick boxes should be laid out in two columns to save scrolling.</div>
+    </div>
+    <div class="field">
+      <label for="cfgCascadeFilters">Dependent filters</label>
+      <input type="text" id="cfgCascadeFilters" value="Street:Zone" placeholder="Street:Zone">
+      <div class="hint">Comma-separated pairs written as <code>Child:Parent</code>. The child filter only lists values found in rows matching whatever is selected in the parent. For example <code>Street:Zone</code> narrows the street list to the chosen Zone.</div>
     </div>
     <div class="field">
       <label for="cfgHighlightCol">Row-highlight column</label>
@@ -505,6 +518,8 @@
       textEditCols: csvSplit($("cfgTextEditCols").value),
       numberCol: $("cfgNumberCol").value.trim() || "Number",
       multiSelectCols: csvSplit($("cfgMultiSelectCols").value),
+      twoColCols: csvSplit($("cfgTwoColCols").value),
+      cascadeFilters: csvSplit($("cfgCascadeFilters").value),
       highlightCol: $("cfgHighlightCol").value.trim(),
       highlightValues: csvSplit($("cfgHighlightValues").value),
       sheetsCsvPath: $("cfgSheetsCsvPath").value.trim()
@@ -531,6 +546,8 @@
       $("cfgTextEditCols").value = (state.config.textEditCols || []).join(", ");
       $("cfgNumberCol").value = state.config.numberCol || "";
       $("cfgMultiSelectCols").value = (state.config.multiSelectCols || []).join(", ");
+      $("cfgTwoColCols").value = (state.config.twoColCols || []).join(", ");
+      $("cfgCascadeFilters").value = (state.config.cascadeFilters || []).join(", ");
       $("cfgHighlightCol").value = state.config.highlightCol || "";
       $("cfgHighlightValues").value = (state.config.highlightValues || []).join(", ");
       $("cfgSheetsCsvPath").value = state.config.sheetsCsvPath || "";
@@ -851,6 +868,40 @@
     });
   }
 
+  function headerMatches(idx, name){
+    return (state.headers[idx] || "").trim().toLowerCase() === (name || "").trim().toLowerCase();
+  }
+
+  function isTwoColCol(idx){
+    return (state.config.twoColCols || []).some(function(name){ return headerMatches(idx, name); });
+  }
+
+  // "Street:Zone" style pairs -> which column (if any) narrows this column's list.
+  function getCascadeParentIdx(childIdx){
+    var pairs = state.config.cascadeFilters || [];
+    for(var i = 0; i < pairs.length; i++){
+      var parts = pairs[i].split(":");
+      if(parts.length !== 2) continue;
+      if(headerMatches(childIdx, parts[0])){
+        return findColIndex(parts[1].trim());
+      }
+    }
+    return -1;
+  }
+
+  function isCascadeParent(idx){
+    return (state.config.cascadeFilters || []).some(function(pair){
+      var parts = pair.split(":");
+      return parts.length === 2 && headerMatches(idx, parts[1]);
+    });
+  }
+
+  // After a filter changes: rebuild the dropdown/checklist set if other lists depend on it.
+  function afterFilterChange(idx){
+    if(isCascadeParent(idx)) renderFilterControls();
+    renderTable();
+  }
+
   function buildParityField(numIdx){
     var wrap = document.createElement("div");
     wrap.className = "filter-field";
@@ -874,8 +925,20 @@
   }
 
   function buildFilterField(idx){
+    // If this list depends on another filter (e.g. Street on Zone), only offer values
+    // that occur in rows matching the parent's current selection.
+    var sourceRows = state.rows;
+    var parentIdx = getCascadeParentIdx(idx);
+    if(parentIdx !== -1 && state.filters[parentIdx] !== undefined){
+      var pf = state.filters[parentIdx];
+      sourceRows = state.rows.filter(function(r){
+        var actual = r.values[parentIdx] || "(blank)";
+        return Array.isArray(pf) ? (pf.length === 0 || pf.indexOf(actual) !== -1) : actual === pf;
+      });
+    }
+
     var uniqSet = {};
-    state.rows.forEach(function(r){ uniqSet[r.values[idx] || "(blank)"] = true; });
+    sourceRows.forEach(function(r){ uniqSet[r.values[idx] || "(blank)"] = true; });
     var values = Object.keys(uniqSet).sort();
 
     var wrap = document.createElement("div");
@@ -892,7 +955,7 @@
       else delete state.filters[idx];
 
       var list = document.createElement("div");
-      list.className = "checklist";
+      list.className = "checklist" + (isTwoColCol(idx) ? " checklist-2col" : "");
       values.forEach(function(v){
         var row = document.createElement("label");
         row.className = "checklist-row";
@@ -908,7 +971,7 @@
           }
           if(current.length) state.filters[idx] = current;
           else delete state.filters[idx];
-          renderTable();
+          afterFilterChange(idx);
         });
         var span = document.createElement("span");
         span.textContent = v;
@@ -938,7 +1001,7 @@
       sel.addEventListener("change", function(){
         if(sel.value === "") delete state.filters[idx];
         else state.filters[idx] = sel.value;
-        renderTable();
+        afterFilterChange(idx);
       });
       wrap.appendChild(sel);
     }
@@ -959,8 +1022,13 @@
 
     // Build every control (including Odd/Even) then place them in the same
     // left-to-right order as the actual column headers in the sheet.
+    // Parents are built before their dependants so any stale parent selection is
+    // cleaned up first; the display order is re-sorted by column position below.
     var entries = cols
       .filter(function(idx){ return idx !== numIdx; })
+      .sort(function(a, b){
+        return (getCascadeParentIdx(a) !== -1 ? 1 : 0) - (getCascadeParentIdx(b) !== -1 ? 1 : 0);
+      })
       .map(function(idx){ return { idx: idx, el: buildFilterField(idx) }; });
 
     if(numIdx !== -1){
